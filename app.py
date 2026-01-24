@@ -97,12 +97,10 @@ st.markdown("""
 
     /* Index Card Enhancement */
     .index-card {
-        padding: 15px;
-        border-radius: 12px;
+        padding: 5px 10px;
         text-align: center;
-        margin-bottom: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        border: 1px solid #eee;
+        background-color: transparent;
+        border: none;
     }
     .index-up {
         background-color: #fff5f5;
@@ -113,25 +111,29 @@ st.markdown("""
         border-left: 5px solid #1971c2;
     }
     .index-name {
-        font-size: 1.1em;
-        font-weight: 700;
-        color: #343a40;
+        font-size: 1.25em;
+        font-weight: 800;
+        color: #212529;
         margin-bottom: 5px;
     }
     .index-value {
-        font-size: 1.4em;
+        font-size: 1.5em;
         font-weight: 800;
         margin-bottom: 2px;
     }
     .index-delta-up {
         color: #e03131;
         font-weight: 600;
-        font-size: 0.95em;
+        font-size: 1em;
     }
     .index-delta-down {
         color: #1971c2;
         font-weight: 600;
-        font-size: 0.95em;
+        font-size: 1em;
+    }
+    .sparkline-container {
+        margin-top: 10px;
+        height: 100px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -177,6 +179,29 @@ def format_market_cap(val):
     if val >= 1e12: return f"{val / 1e12:,.1f}조"
     elif val >= 1e8: return f"{val / 1e8:,.0f}억"
     return f"{val:,.0f}"
+
+def create_sparkline(history_data, color):
+    """Creates a small sparkline chart using Plotly."""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=history_data.index,
+        y=history_data['Close'],
+        mode='lines',
+        line=dict(color=color, width=2),
+        fill='tozeroy',
+        fillcolor=f"rgba({224 if color=='#e03131' else 25}, {49 if color=='#e03131' else 113}, {49 if color=='#e03131' else 194}, 0.1)",
+        hoverinfo='none'
+    ))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=100,
+        showlegend=False,
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+    )
+    return fig
 
 # Gemini AI Setup
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -239,7 +264,7 @@ if 'show_analysis' not in st.session_state:
     st.session_state['show_analysis'] = False
 
 # Main UI
-st.title("🛡️ 스마트 AI 주식 분석 대시보드 v1.9")
+st.title("🛡️ 실시간 AI 주식 분석기 v2.8")
 
 # Search Bar Area
 col_search1, col_search2, col_search3 = st.columns([3, 1, 1])
@@ -271,7 +296,7 @@ st.divider()
 # --- Conditional Rendering ---
 if not st.session_state['show_analysis']:
     # --- Home Screen ---
-    st.write("### 🌍 글로벌 주요 지수 현황")
+    st.write("### 🌍 글로벌 주요 지수 현황 (최근 1년 추이)")
     indices = {"코스피": "^KS11", "코스닥": "^KQ11", "S&P 500": "^GSPC", "나스닥": "^IXIC"}
     idx_cols = st.columns(4)
     index_summary_data = {}
@@ -279,14 +304,35 @@ if not st.session_state['show_analysis']:
     for (name, symbol), col in zip(indices.items(), idx_cols):
         try:
             t_obj = yf.Ticker(symbol)
-            idx_hist = t_obj.history(period="2d")
-            if not idx_hist.empty and len(idx_hist) >= 2:
-                cv = idx_hist['Close'].iloc[-1]; pv = idx_hist['Close'].iloc[-2]
-                dv = cv - pv; dp = (dv / pv) * 100
+            # Fetch 1 year for the chart and 2 days for the change percent
+            idx_hist_1y = t_obj.history(period="1y")
+            if not idx_hist_1y.empty and len(idx_hist_1y) >= 2:
+                cv = idx_hist_1y['Close'].iloc[-1]
+                pv = idx_hist_1y['Close'].iloc[-2]
+                dv = cv - pv
+                dp = (dv / pv) * 100
+                
                 card_class = "index-up" if dv >= 0 else "index-down"
                 delta_class = "index-delta-up" if dv >= 0 else "index-delta-down"
                 arrow = "▲" if dv >= 0 else "▼"
-                col.markdown(f'<div class="index-card {card_class}"><div class="index-name">{name}</div><div class="index-value">{cv:,.2f}</div><div class="{delta_class}">{arrow} {abs(dv):,.2f} ({dp:+.2f}%)</div></div>', unsafe_allow_html=True)
+                color = "#e03131" if dv >= 0 else "#1971c2"
+                
+                with col:
+                    # 하나의 테두리 박스 안에 수치와 차트를 통합
+                    with st.container(border=True):
+                        # 배경색을 흰색으로 통일
+                        bg_color = "#ffffff"
+                        st.markdown(f"""
+                        <div class="index-card" style="background-color: {bg_color}; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid {color};">
+                            <div class="index-name">{name}</div>
+                            <div class="index-value" style="color: #212529;">{cv:,.2f}</div>
+                            <div class="{delta_class}">{arrow} {abs(dv):,.2f} ({dp:+.2f}%)</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        spark_fig = create_sparkline(idx_hist_1y, color)
+                        st.plotly_chart(spark_fig, use_container_width=True, config={'displayModeBar': False})
+                
                 index_summary_data[name] = f"{cv:,.2f} ({dp:+.2f}%)"
             else:
                 curr_p = t_obj.info.get('regularMarketPrice', 0)
@@ -312,7 +358,6 @@ if not st.session_state['show_analysis']:
                 pe = inf.get('trailingPE', 0)
                 div = inf.get('forwardDividendYield', 0)
                 
-                # Default status if not provided
                 status = item.get('status', '관망')
                 badge_class = 'badge-buy' if '매수' in status else 'badge-watch' if '주의' in status else 'badge-wait'
 
@@ -413,25 +458,94 @@ else:
             with tab:
                 hist = stock_obj.history(period=p_val)
                 if not hist.empty:
-                    fig = go.Figure(data=[go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name="주가 정보", hovertemplate="<b>%{x|%Y-%m-%d}</b><br>시가: %{open:,.0f}원<br>고가: %{high:,.0f}원<br>저가: %{low:,.0f}원<br>종가: %{close:,.0f}원<br><extra></extra>" if curr == "KRW" else "<b>%{x|%Y-%m-%d}</b><br>시가: %{open:,.2f}<br>고가: %{high:,.2f}<br>저가: %{low:,.2f}<br>종가: %{close:,.2f}<br><extra></extra>")])
+                    fig = go.Figure(data=[go.Candlestick(
+                        x=hist.index,
+                        open=hist['Open'], high=hist['High'],
+                        low=hist['Low'], close=hist['Close'],
+                        name="주가 정보",
+                        increasing_line_color='#e03131', # 상승: 빨간색
+                        decreasing_line_color='#1971c2', # 하락: 파란색
+                        hovertemplate="<b>%{x|%Y-%m-%d}</b><br>시가: %{open:,.0f}원<br>고가: %{high:,.0f}원<br>저가: %{low:,.0f}원<br>종가: %{close:,.0f}원<br><extra></extra>" if curr == "KRW" else "<b>%{x|%Y-%m-%d}</b><br>시가: %{open:,.2f}<br>고가: %{high:,.2f}<br>저가: %{low:,.2f}<br>종가: %{close:,.2f}<br><extra></extra>"
+                    )])
                     fig.update_layout(xaxis_rangeslider_visible=False, height=500, yaxis=dict(tickformat=",.0f" if curr == "KRW" else ",.2f", ticksuffix="원" if curr == "KRW" else ""))
                     st.plotly_chart(fig, use_container_width=True)
                 else: st.write("데이터가 없습니다.")
 
-        st.subheader("🧾 재무제표")
-        FIN_MAP = {"Total Revenue": "매출액", "Cost Of Revenue": "매출원가", "Gross Profit": "매출총이익", "Operating Income": "영업이익", "Net Income": "당기순이익", "Total Assets": "자산총계", "Current Assets": "유동자산", "Inventory": "재고자산", "Total Liabilities Net Minority Interest": "부채총계", "Total Equity Gross Minority Interest": "자본총계", "Working Capital": "운전자본"}
+        # Financials
+        st.subheader("🧾 재무제표 (단위: 한글)")
+        FIN_MAP = {
+            # 손익계산서 (Income Statement)
+            "Total Revenue": "매출액",
+            "Cost Of Revenue": "매출원가",
+            "Gross Profit": "매출총이익",
+            "Operating Expense": "영업비용",
+            "Operating Income": "영업이익",
+            "Net Non Operating Interest Income Expense": "영업외손익(이자)",
+            "Other Income Expense": "기타영업외손익",
+            "Pretax Income": "법인세차감전순이익",
+            "Tax Provision": "법인세비용",
+            "Net Income Common Stockholders": "당기순이익(보통주)",
+            "Net Income": "당기순이익",
+            "Basic EPS": "기본주당순이익(EPS)",
+            "Diluted EPS": "희석주당순이익(EPS)",
+            "EBITDA": "EBITDA",
+            "EBIT": "EBIT",
+            
+            # 대차대조표 (Balance Sheet)
+            "Total Assets": "자산총계",
+            "Current Assets": "유동자산",
+            "Cash And Cash Equivalents": "현금및현금성자산",
+            "Receivables": "매출채권",
+            "Inventory": "재고자산",
+            "Prepaid Assets": "선급비용",
+            "Other Current Assets": "기타유동자산",
+            "Total Non Current Assets": "비유동자산총계",
+            "Net PPE": "유형자산",
+            "Goodwill And Other Intangible Assets": "무형자산및영업권",
+            "Total Liabilities Net Minority Interest": "부채총계",
+            "Current Liabilities": "유동부채",
+            "Payables": "매입채무",
+            "Current Debt": "단기차입금",
+            "Total Non Current Liabilities Net Minority Interest": "비유동부채총계",
+            "Long Term Debt": "장기차입금",
+            "Total Equity Gross Minority Interest": "자본총계",
+            "Stockholders Equity": "자본총계(지배)",
+            "Common Stock": "자본금",
+            "Retained Earnings": "이익잉여금",
+            "Working Capital": "운전자본"
+        }
+        
+        def format_won_korean(val):
+            """숫자를 조, 억 단위 한글로 변환"""
+            if pd.isna(val) or val == 0: return "-"
+            abs_val = abs(val)
+            res = ""
+            if abs_val >= 1e12:
+                res += f"{int(abs_val // 1e12)}조 "
+                abs_val %= 1e12
+            if abs_val >= 1e8:
+                res += f"{int(abs_val // 1e8)}억"
+            
+            if not res: return f"{val:,.0f}"
+            return ("-" if val < 0 else "") + res.strip()
+
         def proc_fin(df):
             if df is None or df.empty: return df
+            # 인덱스 한글화
             df.index = [FIN_MAP.get(i, i) for i in df.index]
-            return df.iloc[:, ::-1]
+            # 컬럼 순서 반전 (최신 데이터를 우측으로 배치)
+            df = df.iloc[:, ::-1]
+            # 모든 셀에 한글 단위 적용
+            return df.applymap(format_won_korean)
+
         fin_period = st.radio("보고서 주기 선택", ["연간 (Annual)", "분기별 (Quarterly)"], horizontal=True)
         f_t1, f_t2 = st.tabs(["손익계산서", "대차대조표"])
         if "연간" in fin_period:
-            with f_t1: st.dataframe(proc_fin(stock_obj.income_stmt), use_container_width=True)
-            with f_t2: st.dataframe(proc_fin(stock_obj.balance_sheet), use_container_width=True)
+            with f_t1: st.table(proc_fin(stock_obj.income_stmt))
+            with f_t2: st.table(proc_fin(stock_obj.balance_sheet))
         else:
-            with f_t1: st.dataframe(proc_fin(stock_obj.quarterly_income_stmt), use_container_width=True)
-            with f_t2: st.dataframe(proc_fin(stock_obj.quarterly_balance_sheet), use_container_width=True)
+            with f_t1: st.table(proc_fin(stock_obj.quarterly_income_stmt))
+            with f_t2: st.table(proc_fin(stock_obj.quarterly_balance_sheet))
 
         st.subheader("🤖 AI 투자 분석 리포트")
         a_col1, a_col2 = st.columns([2, 1])
