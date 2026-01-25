@@ -208,7 +208,22 @@ api_key = os.getenv("GOOGLE_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 else:
-    st.sidebar.warning("Gemini API 키가 설정되지 않았습니다. .env 파일이나 환경 변수에 GOOGLE_API_KEY를 등록해주세요.")
+    st.sidebar.warning("Gemini API 키가 설정되지 않았습니다. Streamlit Cloud의 Secrets나 .env 파일에 GOOGLE_API_KEY를 등록해주세요.")
+
+# Sidebar Utilities
+with st.sidebar:
+    st.title("🛠️ 설정 및 도구")
+    if st.button("🔄 캐시 지우기 및 새로고침"):
+        st.cache_data.clear()
+        st.success("캐시가 삭제되었습니다!")
+        st.rerun()
+    st.divider()
+    st.info("""
+    **할당량 초과 문제 해결 안내:**
+    1. '캐시 지우기' 버튼을 클릭해 보세요.
+    2. Streamlit Cloud의 Dashboard -> Settings -> Secrets에 API 키가 정확히 입력되었는지 확인하세요.
+    3. 무료 API 키는 분당 요청 제한이 엄격합니다.
+    """)
 
 def get_ai_analysis(ticker, info):
     if not api_key:
@@ -222,17 +237,24 @@ def get_ai_analysis(ticker, info):
         </style>
     """, unsafe_allow_html=True)
     
-    for model_name in ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-pro-latest']:
+    last_error = ""
+    for model_name in ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']:
         try:
             model = genai.GenerativeModel(model_name)
             prompt = f"주식 분석 대상: {ticker} ({info.get('longName', ticker)})\n기업 요약: {info.get('longBusinessSummary', '정보 없음')}\n위 데이터를 바탕으로 한국어로 전문적인 투자 분석 보고서를 작성해줘:\n1. 정성적 분석 (시장 경쟁력, 주요 리스크)\n2. 정량적 분석 (수익성 지표, 재무 지표 기반 건전성)\n3. 종합 투자 의견: '매수 권장', '관망', '주의' 중 하나를 선택하고 명확한 근거 제시.\n※ 주의사항: 가독성을 위해 큰 제목(#) 대신 중간 제목(###)만 사용하여 내용을 구조화해줘."
             response = model.generate_content(prompt)
             return f'<div class="ai-report">{response.text}</div>'
         except Exception as e:
-            if "429" in str(e):
-                return "⚠️ **AI 서비스 할당량이 일시적으로 초과되었습니다.** 무료 버전 제한으로 인해 빈번한 요청이 거부될 수 있습니다. 약 1분 후 다시 시도해 주세요."
-            continue
-    return "사용 가능한 Gemini 모델을 찾을 수 없습니다."
+            last_error = str(e)
+            if "429" in last_error:
+                continue # 다음 모델 시도
+            elif "404" in last_error:
+                continue # 모델이 없는 경우 다음 모델 시도
+            break # 다른 심각한 에러는 중단
+    
+    if "429" in last_error:
+        return "⚠️ **AI 서비스 할당량이 일시적으로 초과되었습니다.** 무료 버전 제한으로 인해 빈번한 요청이 거부될 수 있습니다. 잠시 후 다시 시도하거나 API 키 설정을 확인해 주세요."
+    return f"AI 분석 생성 실패: {last_error}"
 
 @st.cache_data(ttl=600)
 def get_market_briefing_v2(index_info):
@@ -240,7 +262,8 @@ def get_market_briefing_v2(index_info):
     if "{} " in index_info or index_info == "{}":
         return "현재 지수 데이터를 불러오는 데 실패하여 브리핑을 생성할 수 없습니다."
         
-    for model_name in ['gemini-flash-latest', 'gemini-2.0-flash', 'gemini-pro-latest']:
+    last_error = ""
+    for model_name in ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']:
         try:
             model = genai.GenerativeModel(model_name)
             prompt = f"다음 글로벌 지수 데이터를 바탕으로 현재 시장 상황 및 전망을 3문장 이내의 아주 전문적인 한국어로 요약해줘: {index_info}"
@@ -248,12 +271,16 @@ def get_market_briefing_v2(index_info):
             if response and response.text:
                 return response.text
         except Exception as e:
-            if "429" in str(e):
-                return "⚠️ **AI 서비스 할당량이 일시적으로 초과되었습니다.** 약 1분 후 다시 시도해 주세요."
-            if model_name == 'gemini-pro-latest':
-                return f"AI 시장 브리핑 생성 실패: {str(e)}"
-            continue
-    return "사용 가능한 Gemini 모델을 찾을 수 없습니다."
+            last_error = str(e)
+            if "429" in last_error:
+                continue
+            if "404" in last_error:
+                continue
+            break
+            
+    if "429" in last_error:
+        raise Exception("AI 서비스 할당량 초과")
+    raise Exception(last_error or "사용 가능한 Gemini 모델을 찾을 수 없습니다.")
 
 # Session State Initialization
 if 'current_ticker' not in st.session_state:
@@ -340,8 +367,14 @@ if not st.session_state['show_analysis']:
         except: col.write(f"{name} 로딩 실패")
 
     with st.spinner("AI 시장 브리핑 생성 중..."):
-        briefing = get_market_briefing_v2(str(index_summary_data))
-    st.info(f"📊 **AI 시장 브리핑:** {briefing}")
+        try:
+            briefing = get_market_briefing_v2(str(index_summary_data))
+            st.info(f"📊 **AI 시장 브리핑:** {briefing}")
+        except Exception as e:
+            if "할당량 초과" in str(e):
+                st.warning("📊 **AI 시장 브리핑:** ⚠️ AI 서비스 할당량이 일시적으로 초과되었습니다. 무료 버전 제한으로 인해 잠시 후 다시 시도해 주세요.")
+            else:
+                st.error(f"📊 **AI 시장 브리핑:** 브리핑을 생성할 수 없습니다. ({str(e)})")
     st.divider()
 
     @st.cache_data(ttl=3600)
