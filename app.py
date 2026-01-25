@@ -201,14 +201,20 @@ def create_sparkline(history_data, color):
         hovertemplate="<b>%{x|%Y-%m-%d}</b><br>지수: %{y:,.2f}<extra></extra>"
     ))
     fig.update_layout(
-        margin=dict(l=0, r=0, t=10, b=0),
-        height=200,
+        margin=dict(l=0, r=0, t=10, b=30), # 라벨 표시 공간 확보
+        height=230, # 라벨 공간을 위해 전체 높이 소폭 상향
         showlegend=False,
         hovermode='x unified',
-        xaxis=dict(visible=False),
+        xaxis=dict(
+            visible=True,
+            showticklabels=True,
+            tickformat="%y-%m-%d", # 년월일(단축형)
+            dtick="M3", # 3개월 단위로 표시하여 겹침 방지
+            tickfont=dict(size=10, color="#888")
+        ),
         yaxis=dict(
             visible=False,
-            range=[min_val - padding, max_val + padding] # 데이터 범위에 맞게 축 고정
+            range=[min_val - padding, max_val + padding]
         ),
         paper_bgcolor='white',
         plot_bgcolor='white',
