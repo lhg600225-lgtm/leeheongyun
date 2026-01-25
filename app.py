@@ -438,9 +438,15 @@ if not api_key:
     st.warning("👈 **왼쪽 사이드바**가 보이지 않는다면 화면 좌측 상단의 **'>' 모양 화살표**를 클릭하여 **[개인 Gemini API 키]**를 입력해 주세요.")
 
 # Search Bar Area
-col_search1, col_search2, col_search3 = st.columns([3, 1, 1])
+col_search1, col_search2, col_search3 = st.columns([3, 1, 1], vertical_alignment="bottom") # 수직 정렬 하단 고정
 with col_search1:
-    user_input = st.text_input("종목명 또는 티커(코드) 입력 (예: 삼성전자, AAPL, 005930)", value=st.session_state['current_ticker'] if st.session_state['show_analysis'] else "", key="main_search")
+    user_input = st.text_input(
+        "검색어 입력", # 시각적으로는 숨겨짐
+        placeholder="종목명 또는 티커(코드) 입력 (예: 삼성전자, AAPL, 005930)", 
+        value=st.session_state['current_ticker'] if st.session_state['show_analysis'] else "", 
+        key="main_search",
+        label_visibility="collapsed"
+    )
 
 with col_search2:
     if st.button("분석하기", use_container_width=True):
