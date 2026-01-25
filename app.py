@@ -505,7 +505,14 @@ if not st.session_state['show_analysis']:
                 c = inf.get('regularMarketChangePercent', 0)
                 cur = inf.get('currency', '')
                 m_cap = inf.get('marketCap', 0)
-                pe = inf.get('trailingPE', 0)
+                
+                # PER 데이터 다각도 취득 (K-주식은 필드가 제각각임)
+                pe = inf.get('trailingPE') or inf.get('forwardPE')
+                if not pe:
+                    eps = inf.get('trailingEps')
+                    if eps and eps > 0 and p > 0:
+                        pe = p / eps
+                
                 div = inf.get('forwardDividendYield', 0)
                 
                 status = item.get('status', '관망')
@@ -515,7 +522,9 @@ if not st.session_state['show_analysis']:
                     **item, 
                     'price': f"{p:,.2f} {cur}" if cur != "KRW" else f"{p:,.0f}원", 
                     'change': f"{c:+.2f}%", 'color': '#e03131' if c >= 0 else '#1971c2',
-                    'market_cap': format_market_cap(m_cap), 'pe': f"{pe:.1f}" if pe else "N/A", 'div_yield': f"{div*100:.1f}%" if div else "0.0%",
+                    'market_cap': format_market_cap(m_cap), 
+                    'pe': f"{pe:.1f}배" if pe and pe > 0 else "N/A", 
+                    'div_yield': f"{div*100:.1f}%" if div else "0.0%",
                     'badge_class': badge_class
                 })
             except: updated_list.append({**item, 'change': '-', 'color': 'black', 'market_cap': "정보 없음", 'pe': "N/A", 'div_yield': "0.0%", 'badge_class': 'badge-wait', 'price': '-'})
@@ -569,7 +578,7 @@ if not st.session_state['show_analysis']:
                             {s_item["price"]} <small>{s_item["change"]}</small>
                         </div>
                         <div style="font-size: 0.82em; color: #666;">
-                            시총: {s_item["market_cap"]} | PER: {s_item["pe"]}배
+                            시총: {s_item["market_cap"]} | PER: {s_item["pe"]}
                         </div>
                         <div style="margin-top: 8px; font-size: 0.83em; color: #555; background-color: #f1f3f5; padding: 6px; border-radius: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
                             <b>💡 이유:</b> {s_item["reason"]}
