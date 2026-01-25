@@ -4,6 +4,8 @@ import plotly.graph_objects as go
 import pandas as pd
 import google.generativeai as genai
 import os
+import requests
+from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -147,6 +149,18 @@ def get_stock_data(ticker):
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
+        
+        # 국내 주식인 경우 네이버 증권 데이터로 보정
+        if ticker.endswith(".KS") or ticker.endswith(".KQ"):
+            clean_code = ticker.split(".")[0]
+            naver_data = get_naver_stock_info(clean_code)
+            if naver_data:
+                # 네이버 데이터를 우선순위로 병합
+                info.update({
+                    'marketCap': naver_data.get('marketCap', info.get('marketCap')),
+                    'trailingPE': naver_data.get('trailingPE', info.get('trailingPE')),
+                    'forwardPE': naver_data.get('forwardPE', info.get('forwardPE'))
+                })
         return stock, info
     except Exception as e:
         return None, None
@@ -177,12 +191,61 @@ def format_ticker(query):
         pass
     return query
 
-def format_market_cap(val):
+def format_market_cap(val, currency="KRW"):
     if not val or not isinstance(val, (int, float)):
         return "정보 없음"
-    if val >= 1e12: return f"{val / 1e12:,.1f}조"
-    elif val >= 1e8: return f"{val / 1e8:,.0f}억"
+    # 국내 주식(원화) 처리
+    if currency == "KRW":
+        if val >= 1e12: return f"{val / 1e12:,.1f}조"
+        elif val >= 1e8: return f"{val / 1e8:,.0f}억"
+    # 해외 주식(달러 등) 처리
+    else:
+        if val >= 1e12: return f"${val / 1e12:,.1f}T"
+        elif val >= 1e9: return f"${val / 1e9:,.1f}B"
+        elif val >= 1e6: return f"${val / 1e6:,.1f}M"
     return f"{val:,.0f}"
+
+def get_naver_stock_info(ticker_code):
+    """
+    네이버 증권에서 시총, PER, PBR 등을 직접 가져와 정확도를 높입니다.
+    ticker_code 예: 005930
+    """
+    try:
+        url = f"https://finance.naver.com/item/main.naver?code={ticker_code}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        res = requests.get(url, headers=headers)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, 'html.parser')
+        
+        info = {}
+        
+        # 시가총액 추출
+        try:
+            m_cap_text = soup.select_one('#_market_sum').text.strip().replace(',', '').replace('\t', '').replace('\n', '')
+            # '조'와 '억' 단위 파싱 (예: 429조8244)
+            if '조' in m_cap_text:
+                parts = m_cap_text.split('조')
+                jo = int(parts[0]) * 1e12
+                ok = int(parts[1]) * 1e8 if parts[1] else 0
+                info['marketCap'] = jo + ok
+            else:
+                info['marketCap'] = int(m_cap_text) * 1e8
+        except: pass
+
+        # PER, PBR 등 재무 지표 추출
+        try:
+            # 네이버 증권 우측 상단 지표 영역
+            # PER: id="_per", PBR: id="_pbr"
+            per_tag = soup.select_one('#_per')
+            if per_tag: info['trailingPE'] = float(per_tag.text.strip().replace(',', ''))
+            
+            pbr_tag = soup.select_one('#_pbr')
+            if pbr_tag: info['forwardPE'] = float(pbr_tag.text.strip().replace(',', '')) # PBR을 대체용으로 활용하거나 별도 처리
+        except: pass
+        
+        return info
+    except:
+        return {}
 
 def create_sparkline(history_data, color):
     """Creates a small sparkline chart using Plotly."""
@@ -499,20 +562,42 @@ if not st.session_state['show_analysis']:
         updated_list = []
         for item in stock_list:
             try:
+                # 국내 주식인 경우 네이버 증권 데이터 우선 시도
+                naver_data = {}
+                is_kr = item['code'].endswith('.KS') or item['code'].endswith('.KQ')
+                if is_kr:
+                    clean_code = item['code'].split('.')[0]
+                    naver_data = get_naver_stock_info(clean_code)
+
                 s_obj = yf.Ticker(item['code'])
                 inf = s_obj.info
                 p = inf.get('currentPrice', inf.get('regularMarketPreviousClose', 0))
                 c = inf.get('regularMarketChangePercent', 0)
-                cur = inf.get('currency', '')
-                m_cap = inf.get('marketCap', 0)
+                cur = inf.get('currency', 'KRW')
                 
-                # PER 데이터 다각도 취득 (K-주식은 필드가 제각각임)
-                pe = inf.get('trailingPE') or inf.get('forwardPE')
+                # 시총 정보 (네이버 데이터가 있으면 우선 적용)
+                m_cap = naver_data.get('marketCap')
+                if not m_cap:
+                    # 실시간 시총 재계산 (yfinance 필드 지연 보완)
+                    shares = inf.get('sharesOutstanding')
+                    if shares and p:
+                        m_cap = shares * p
+                    else:
+                        m_cap = inf.get('marketCap', 0)
+                
+                # PER 데이터 다각도 취득 및 검증 (네이버 데이터 우선)
+                pe = naver_data.get('trailingPE') or inf.get('trailingPE') or inf.get('forwardPE')
                 if not pe:
                     eps = inf.get('trailingEps')
                     if eps and eps > 0 and p > 0:
-                        pe = p / eps
+                        calc_pe = p / eps
+                        if 0.5 < calc_pe < 500:
+                            pe = calc_pe
                 
+                # 비정상 수치 필터링 (너무 높거나 낮은 경우 N/A 처리)
+                if pe and (pe <= 0 or pe > 1000):
+                    pe = None
+
                 div = inf.get('forwardDividendYield', 0)
                 
                 status = item.get('status', '관망')
@@ -522,8 +607,8 @@ if not st.session_state['show_analysis']:
                     **item, 
                     'price': f"{p:,.2f} {cur}" if cur != "KRW" else f"{p:,.0f}원", 
                     'change': f"{c:+.2f}%", 'color': '#e03131' if c >= 0 else '#1971c2',
-                    'market_cap': format_market_cap(m_cap), 
-                    'pe': f"{pe:.1f}배" if pe and pe > 0 else "N/A", 
+                    'market_cap': format_market_cap(m_cap, cur), 
+                    'pe': f"{pe:.1f}배" if pe else "N/A", 
                     'div_yield': f"{div*100:.1f}%" if div else "0.0%",
                     'badge_class': badge_class
                 })
@@ -627,7 +712,7 @@ else:
             curr = info.get('currency', 'KRW')
             st.metric("현재가", f"{prc:,.0f} {curr}" if curr == "KRW" else f"{prc:,.2f} {curr}")
         with m_col2: st.metric("산업 분야", info.get('sector', info.get('industry', '정보 없음')))
-        with m_col3: st.metric("시가총액(규모)", format_market_cap(info.get('marketCap')))
+        with m_col3: st.metric("시가총액(규모)", format_market_cap(info.get('marketCap'), info.get('currency', 'KRW')))
         with m_col4:
             chg = info.get('regularMarketChangePercent', 0)
             st.metric("전일대비", f"{chg:+.2f}%", delta=f"{chg:+.2f}%" if chg else None)
