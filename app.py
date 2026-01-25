@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Page setting
-st.set_page_config(page_title="금융 데이터 분석 AI", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="금융 데이터 분석 AI", layout="wide", initial_sidebar_state="expanded")
 
 # Simple & Bright Style
 st.markdown("""
@@ -204,18 +204,63 @@ def create_sparkline(history_data, color):
     return fig
 
 # Gemini AI Setup
-api_key = os.getenv("GOOGLE_API_KEY")
-if api_key:
-    genai.configure(api_key=api_key)
+st.sidebar.markdown("### 🔑 API 설정")
+# key를 지정하여 세션 상태 유지 보장
+user_api_key = st.sidebar.text_input("개인 Gemini API 키 입력", type="password", key="user_api_key_input", help="공용 할당량이 초과된 경우 자신의 API 키를 입력하면 즉시 해결됩니다.")
+system_api_key = os.getenv("GOOGLE_API_KEY")
+api_key = user_api_key if user_api_key else system_api_key
+
+# 현재 활성화된 키 상태 표시
+if user_api_key:
+    masked_key = f"{user_api_key[:4]}...{user_api_key[-4:]}" if len(user_api_key) > 8 else "****"
+    st.sidebar.success(f"✅ 개인 API 키 활성화됨 ({masked_key})")
+elif system_api_key:
+    st.sidebar.info("ℹ️ 공용 API 키 사용 중")
 else:
-    st.sidebar.warning("Gemini API 키가 설정되지 않았습니다. Streamlit Cloud의 Secrets나 .env 파일에 GOOGLE_API_KEY를 등록해주세요.")
+    st.sidebar.error("⚠️ API 키가 없습니다.")
+
+if api_key:
+    try:
+        genai.configure(api_key=api_key)
+    except Exception as e:
+        st.sidebar.error(f"API 키 설정 오류: {str(e)}")
+
+st.sidebar.markdown(f"""
+<div style="background-color: #fff3cd; padding: 10px; border-radius: 5px; border: 1px solid #ffeeba; color: #856404; font-size: 0.85em;">
+    <b>💡 할당량 초과 해결 방법</b><br>
+    <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>에서 <b>무료 API 키</b>를 발급받아 위 입력란에 넣으시면 즉시 정상 작동합니다.
+</div>
+""", unsafe_allow_html=True)
 
 # Sidebar Utilities
 with st.sidebar:
     st.title("🛠️ 설정 및 도구")
-    if st.button("🔄 캐시 지우기 및 새로고침"):
+    
+    # API Connection Test
+    if st.button("🔍 API 연결 및 모델 진단"):
+        if not api_key:
+            st.error("진단할 API 키가 없습니다.")
+        else:
+            with st.spinner("진단 중..."):
+                try:
+                    genai.configure(api_key=api_key)
+                    available_models = []
+                    for m in genai.list_models():
+                        if 'generateContent' in m.supported_generation_methods:
+                            available_models.append(m.name)
+                    st.success(f"연결 성공! 모델: {len(available_models)}개")
+                    with st.expander("가용 모델 목록"):
+                        st.write(available_models)
+                except Exception as ex:
+                    st.error(f"진단 실패: {str(ex)}")
+    st.divider()
+    
+    if st.button("🔄 캐시 지우기 및 앱 초기화"):
         st.cache_data.clear()
-        st.success("캐시가 삭제되었습니다!")
+        # 세션 상태 전체 초기화로 확실한 리셋 보장
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.success("앱이 초기화되었습니다!")
         st.rerun()
     st.divider()
     st.info("""
@@ -225,9 +270,14 @@ with st.sidebar:
     3. 무료 API 키는 분당 요청 제한이 엄격합니다.
     """)
 
-def get_ai_analysis(ticker, info):
-    if not api_key:
+def get_ai_analysis(ticker, info, current_api_key):
+    if not current_api_key:
         return "⚠️ **API 키가 설정되지 않았습니다.**\n\n측면 바의 안내를 확인하여 Gemini API 키를 설정해주세요."
+
+    # 호출 시점에 API 키 재설정 (병렬성 및 세션 독립성 보장)
+    try:
+        genai.configure(api_key=current_api_key)
+    except: pass
 
     st.markdown("""
         <style>
@@ -238,7 +288,8 @@ def get_ai_analysis(ticker, info):
     """, unsafe_allow_html=True)
     
     last_error = ""
-    for model_name in ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']:
+    # 할당량이 가장 넉넉한 Lite 모델부터 순차적으로 시도
+    for model_name in ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.0-flash', 'gemini-pro-latest']:
         try:
             model = genai.GenerativeModel(model_name)
             prompt = f"주식 분석 대상: {ticker} ({info.get('longName', ticker)})\n기업 요약: {info.get('longBusinessSummary', '정보 없음')}\n위 데이터를 바탕으로 한국어로 전문적인 투자 분석 보고서를 작성해줘:\n1. 정성적 분석 (시장 경쟁력, 주요 리스크)\n2. 정량적 분석 (수익성 지표, 재무 지표 기반 건전성)\n3. 종합 투자 의견: '매수 권장', '관망', '주의' 중 하나를 선택하고 명확한 근거 제시.\n※ 주의사항: 가독성을 위해 큰 제목(#) 대신 중간 제목(###)만 사용하여 내용을 구조화해줘."
@@ -247,23 +298,29 @@ def get_ai_analysis(ticker, info):
         except Exception as e:
             last_error = str(e)
             if "429" in last_error:
-                continue # 다음 모델 시도
-            elif "404" in last_error:
-                continue # 모델이 없는 경우 다음 모델 시도
-            break # 다른 심각한 에러는 중단
+                break # 할당량 초과는 바로 중단하여 계정 보호
+            if "404" in last_error or "not found" in last_error.lower():
+                continue # 모델이 없으면 다음 모델 시도
+            break
     
     if "429" in last_error:
-        return "⚠️ **AI 서비스 할당량이 일시적으로 초과되었습니다.** 무료 버전 제한으로 인해 빈번한 요청이 거부될 수 있습니다. 잠시 후 다시 시도하거나 API 키 설정을 확인해 주세요."
+        return "⚠️ **AI 서비스 할당량이 일시적으로 초과되었습니다.** 무료 버전 제한(RPM)에 도달했습니다. 약 1분 후 다시 시도하시거나, 사이드바에 개인 API 키를 입력해 주세요."
     return f"AI 분석 생성 실패: {last_error}"
 
-@st.cache_data(ttl=600)
-def get_market_briefing_v2(index_info):
-    if not api_key: return "지수 정보를 통해 분석할 AI 키가 없습니다."
-    if "{} " in index_info or index_info == "{}":
+@st.cache_data(ttl=3600) # 1시간 동안 캐시 유지
+def get_market_briefing_v2(index_info, current_api_key):
+    if not current_api_key: return "지수 정보를 통해 분석할 AI 키가 없습니다."
+    
+    # 호출 시점에 API 키 재설정 (캐시 무효화 및 키 갱신 보장)
+    try:
+        genai.configure(api_key=current_api_key)
+    except: pass
+
+    if not index_info or index_info == "{}":
         return "현재 지수 데이터를 불러오는 데 실패하여 브리핑을 생성할 수 없습니다."
         
     last_error = ""
-    for model_name in ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']:
+    for model_name in ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.0-flash', 'gemini-pro-latest']:
         try:
             model = genai.GenerativeModel(model_name)
             prompt = f"다음 글로벌 지수 데이터를 바탕으로 현재 시장 상황 및 전망을 3문장 이내의 아주 전문적인 한국어로 요약해줘: {index_info}"
@@ -273,13 +330,13 @@ def get_market_briefing_v2(index_info):
         except Exception as e:
             last_error = str(e)
             if "429" in last_error:
-                continue
-            if "404" in last_error:
+                break
+            if "404" in last_error or "not found" in last_error.lower():
                 continue
             break
             
     if "429" in last_error:
-        raise Exception("AI 서비스 할당량 초과")
+        raise Exception(f"QUOTA_EXCEEDED: {last_error}")
     raise Exception(last_error or "사용 가능한 Gemini 모델을 찾을 수 없습니다.")
 
 # Session State Initialization
@@ -289,9 +346,15 @@ if 'ticker_history' not in st.session_state:
     st.session_state['ticker_history'] = []
 if 'show_analysis' not in st.session_state:
     st.session_state['show_analysis'] = False
+if 'last_briefing' not in st.session_state:
+    st.session_state['last_briefing'] = None
 
 # Main UI
 st.title("🛡️ 실시간 AI 주식 분석기 v2.8")
+
+# 사이드바 안내 (API 키가 없을 경우에만 표시)
+if not api_key:
+    st.warning("👈 **왼쪽 사이드바**가 보이지 않는다면 화면 좌측 상단의 **'>' 모양 화살표**를 클릭하여 **[개인 Gemini API 키]**를 입력해 주세요.")
 
 # Search Bar Area
 col_search1, col_search2, col_search3 = st.columns([3, 1, 1])
@@ -360,21 +423,57 @@ if not st.session_state['show_analysis']:
                         spark_fig = create_sparkline(idx_hist_1y, color)
                         st.plotly_chart(spark_fig, use_container_width=True, config={'displayModeBar': False})
                 
-                index_summary_data[name] = f"{cv:,.2f} ({dp:+.2f}%)"
+                # 지수 데이터를 정수 및 소수점 1자리로 제한하여 캐시 효율성 증대 (너무 잦은 AI 호출 방지)
+                index_summary_data[name] = f"{int(cv):,} ({dp:+.1f}%)"
             else:
                 curr_p = t_obj.info.get('regularMarketPrice', 0)
                 col.markdown(f'<div class="index-card">{name}<br><b>{curr_p:,.2f}</b><br><small>데이터 대기 중</small></div>', unsafe_allow_html=True)
         except: col.write(f"{name} 로딩 실패")
 
-    with st.spinner("AI 시장 브리핑 생성 중..."):
-        try:
-            briefing = get_market_briefing_v2(str(index_summary_data))
-            st.info(f"📊 **AI 시장 브리핑:** {briefing}")
-        except Exception as e:
-            if "할당량 초과" in str(e):
-                st.warning("📊 **AI 시장 브리핑:** ⚠️ AI 서비스 할당량이 일시적으로 초과되었습니다. 무료 버전 제한으로 인해 잠시 후 다시 시도해 주세요.")
-            else:
-                st.error(f"📊 **AI 시장 브리핑:** 브리핑을 생성할 수 없습니다. ({str(e)})")
+    # --- AI Briefing Section ---
+    st.write("#### 📊 AI 시장 브리핑")
+    
+    if st.session_state['last_briefing'] is None:
+        # 자동 호출 대신 버튼 클릭 시에만 호출하도록 변경 (할당량 보호)
+        if st.button("🚀 AI 시장 브리핑 생성 (무료 API 이용)", use_container_width=True):
+            with st.spinner("AI 시장 브리핑 생성 중..."):
+                try:
+                    # 최신 api_key를 인자로 전달하여 캐시 무효화 보장
+                    briefing = get_market_briefing_v2(str(index_summary_data), api_key)
+                    st.session_state['last_briefing'] = briefing
+                    st.rerun()
+                except Exception as e:
+                    err_msg = str(e)
+                    if "QUOTA_EXCEEDED" in err_msg:
+                        # 실제로 개인 키를 사용 중인지 체크 (세션 상태와 비교)
+                        is_using_personal = bool(st.session_state.get("user_api_key_input"))
+                        if is_using_personal:
+                            st.error(f"""
+                            ⚠️ **입력하신 개인 API 키도 제한에 걸렸습니다.**
+                            
+                            **원인:** `{err_msg}`
+                            
+                            **조치 제안:**
+                            1. **무료 키 제한**: 무료 API 키는 1분에 약 15번 정도만 호출이 가능합니다. 너무 빨리 클릭하지 마세요.
+                            2. **잠시 대기**: 약 1~2분 정도만 아무 클릭 없이 기다리셨다가 다시 눌러보세요.
+                            3. **키 유효성**: [Google AI Studio](https://aistudio.google.com/app/apikey)에서 방금 만드신 키가 제대로 활성화되었는지 확인해 주세요.
+                            """)
+                        else:
+                            st.warning(f"""
+                            ⚠️ **공용 AI 할당량이 모두 소진되었습니다.**
+                            
+                            **해결 방법:** 왼쪽 사이드바에 본인의 **[개인 Gemini API 키]**를 입력해 주세요. (가장 확실한 방법)
+                            """)
+                    else:
+                        st.error(f"브리핑 생성 실패: {err_msg}")
+        else:
+            st.info("위 버튼을 클릭하면 AI가 현재 지수를 분석하여 브리핑을 생성합니다.")
+    else:
+        st.info(f"{st.session_state['last_briefing']}")
+        if st.button("🔄 브리핑 새로고침", use_container_width=False):
+            st.session_state['last_briefing'] = None
+            st.rerun()
+    
     st.divider()
 
     @st.cache_data(ttl=3600)
@@ -582,7 +681,9 @@ else:
 
         st.subheader("🤖 AI 투자 분석 리포트")
         a_col1, a_col2 = st.columns([2, 1])
-        with st.spinner("AI 분석 중..."): ai_text = get_ai_analysis(ticker, info)
+        with st.spinner("AI 분석 중..."): 
+            # 최신 api_key를 인자로 전달
+            ai_text = get_ai_analysis(ticker, info, api_key)
         with a_col1: st.markdown(ai_text, unsafe_allow_html=True)
         with a_col2:
             st.write("### 🎯 투자 판단")
