@@ -59,6 +59,10 @@ st.markdown("""
         margin-bottom: 10px;
         color: #333;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        height: 250px; /* 고정 높이 설정 */
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
     }
     .metric-row {
         display: flex;
@@ -183,21 +187,29 @@ def format_market_cap(val):
 def create_sparkline(history_data, color):
     """Creates a small sparkline chart using Plotly."""
     fig = go.Figure()
+    # 데이터의 최소/최대값을 구하여 Y축 범위를 타이트하게 설정 (하단 빈 공간 제거)
+    min_val = history_data['Close'].min()
+    max_val = history_data['Close'].max()
+    padding = (max_val - min_val) * 0.1
+    
     fig.add_trace(go.Scatter(
         x=history_data.index,
         y=history_data['Close'],
         mode='lines',
         line=dict(color=color, width=2),
-        fill='tozeroy',
-        fillcolor=f"rgba({224 if color=='#e03131' else 25}, {49 if color=='#e03131' else 113}, {49 if color=='#e03131' else 194}, 0.1)",
-        hoverinfo='none'
+        # fill='tozeroy'를 제거하여 하단 여백 발생 방지
+        hovertemplate="<b>%{x|%Y-%m-%d}</b><br>지수: %{y:,.2f}<extra></extra>"
     ))
     fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        height=100,
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=200,
         showlegend=False,
+        hovermode='x unified',
         xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
+        yaxis=dict(
+            visible=False,
+            range=[min_val - padding, max_val + padding] # 데이터 범위에 맞게 축 고정
+        ),
         paper_bgcolor='white',
         plot_bgcolor='white',
     )
@@ -504,65 +516,86 @@ if not st.session_state['show_analysis']:
         return updated_list
 
     kr_base = [
-        {"name": "삼성전자", "code": "005930.KS", "reason": "AI 반도체 수요 및 HBM 공급 가시화", "status": "매수 권장"},
-        {"name": "SK하이닉스", "code": "000660.KS", "reason": "D램 가격 상승 및 메모리 리더십 유지", "status": "매수 권장"},
-        {"name": "LG에너지솔루션", "code": "373220.KS", "reason": "IRA 보조금 혜택 및 전기차 시장 회복", "status": "관망"},
-        {"name": "삼성바이오로직스", "code": "207940.KS", "reason": "안정적 수주 확보 및 CMO 지배력", "status": "매수 권장"},
-        {"name": "현대차", "code": "005380.KS", "reason": "하이브리드 판매 호조 및 주주환원 강화", "status": "매수 권장"},
-        {"name": "NAVER", "code": "035420.KS", "reason": "생성형 AI '하이퍼클로바X' 성과 본격화", "status": "관망"},
-        {"name": "셀트리온", "code": "068270.KS", "reason": "합병 시너지 및 미국 매출 확대 기대", "status": "관망"},
-        {"name": "기아", "code": "000270.KS", "reason": "역대급 실적 기반 고배당 매력 상승", "status": "매수 권장"},
-        {"name": "POSCO홀딩스", "code": "005490.KS", "reason": "이차전지 소재 사업 장기 성장 동력", "status": "주의"},
-        {"name": "KB금융", "code": "105560.KS", "reason": "밸류업 프로그램 수혜 및 이익 방어력", "status": "매수 권장"}
+        {"name": "삼성전자", "code": "005930.KS", "reason": "AI 서버용 HBM3E 공급 본격화 및 파운드리 수익성 개선 기대, 업황 바닥 통과에 따른 실적 반등 가속화.", "status": "매수 권장"},
+        {"name": "SK하이닉스", "code": "000660.KS", "reason": "HBM 시장 내 독보적 지위 유지 및 차세대 메모리 주도권 확보, 데이터센터 투자 확대에 따른 고부가 제품 판매 증가.", "status": "매수 권장"},
+        {"name": "LG에너지솔루션", "code": "373220.KS", "reason": "4680 원통형 배터리 양산 및 북미 합작공장 가동을 통한 이익 확대, 글로벌 시장 점유율 1위 수성 전략 강화.", "status": "매수 권장"},
+        {"name": "삼성바이오로직스", "code": "207940.KS", "reason": "4공장 풀가동 및 5공장 조기 증설을 통한 압도적 생산능력 확보, 대형 글로벌 제약사와의 장기 수주 계약 확대.", "status": "매수 권장"},
+        {"name": "현대차", "code": "005380.KS", "reason": "전동화 전환 가속 및 하이브리드 비중 확대로 수익성 개선 성공, 주주환원 정책 강화(자사주 소각 등)로 기업 가치 제고.", "status": "매수 권장"},
+        {"name": "NAVER", "code": "035420.KS", "reason": "생성형 AI '하이퍼클로바X' 기반 B2B 솔루션 매출 본격화, 치지직 등 커뮤니티 서비스 강화로 광고 수익 확대.", "status": "매수 권장"},
+        {"name": "셀트리온", "code": "068270.KS", "reason": "짐펜트라 미국 직접 판매 채널 구축 및 신규 바이오시밀러 승인 기대, 합병 후 효율화된 비용 구조로 이익률 상승.", "status": "매수 권장"},
+        {"name": "기아", "code": "000270.KS", "reason": "역대 최고 영업이익률 달성과 함께 공격적인 배당 정책 유지, 북미 및 유럽 내 고마진 모델 판매 비중 지속 확대.", "status": "매수 권장"},
+        {"name": "삼성SDI", "code": "006400.KS", "reason": "전고체 배터리 시제품 공급 및 모빌리티용 원형 배터리 시장 점유율 확대, 기술 중심의 차별화된 고수익 성장 전략.", "status": "매수 권장"},
+        {"name": "KB금융", "code": "105560.KS", "reason": "주주가치 제고를 위한 밸류업 프로그램 선도적 이행 및 자본 효율성 개선, 견고한 이익 체력을 바탕으로 배당 성향 확대.", "status": "매수 권장"},
+        {"name": "신한지주", "code": "055550.KS", "reason": "속도감 있는 자사주 매입 및 소각 정책으로 주당 순이익 증가 유도, 금리 변동성에도 철저한 리스크 관리 탁월.", "status": "매수 권장"},
+        {"name": "삼성물산", "code": "028260.KS", "reason": "바이오 부문 실적 호조 및 건설 부문 역대 최고 수주 잔고 유지, 자사주 순차적 소각 등 전향적 주주 환원 가시화.", "status": "매수 권장"},
+        {"name": "현대모비스", "code": "012330.KS", "reason": "전동화 핵심 부품 공급 확대 및 AS 부문 고수익 구조 유지, 완성차 글로벌 가동률 상승에 따른 실적 개선 수혜.", "status": "매수 권장"},
+        {"name": "LG화학", "code": "051910.KS", "reason": "배터리 양극재 캐파 증설 및 소재 수직 계열화 성공, 신성장 동력(신약, 필터 등) 비중 증대에 따른 재평가 기대.", "status": "매수 권장"},
+        {"name": "카카오", "code": "035720.KS", "reason": "카카오톡 기반 광고 매출 안정화 및 AI 서비스 일상화 전략, 계열사 리스크 해소와 수익성 중심의 체질 개선 성공.", "status": "매수 권장"}
     ]
     us_base = [
-        {"name": "NVIDIA", "code": "NVDA", "reason": "AI 칩 시장 독점 및 높은 수익성 유지", "status": "매수 권장"},
-        {"name": "Microsoft", "code": "MSFT", "reason": "Cloud와 AI 결합 시너지 지속", "status": "매수 권장"},
-        {"name": "Apple", "code": "AAPL", "reason": "강력한 현금흐름 및 AI 아이폰 기대", "status": "매수 권장"},
-        {"name": "Alphabet", "code": "GOOGL", "reason": "클라우드 성장 가속 및 광고 지배력", "status": "관망"},
-        {"name": "Amazon", "code": "AMZN", "reason": "AWS 성과 회복 및 물류 효율화", "status": "매수 권장"},
-        {"name": "Meta", "code": "META", "reason": "AI 기반 콘텐츠 추천 및 광고 효율 증가", "status": "매수 권장"},
-        {"name": "Tesla", "code": "TSLA", "reason": "자율주행 기술 진보 및 에너지 사업 성장", "status": "주의"},
-        {"name": "Eli Lilly", "code": "LLY", "reason": "비만 치료제 시장 폭발적 수요 지배", "status": "매수 권장"},
-        {"name": "Broadcom", "code": "AVGO", "reason": "AI 네트워킹 수요 및 VMWare 시너지", "status": "매수 권장"},
-        {"name": "Costco", "code": "COST", "reason": "강력한 고객 충성도 기반 방어주 매력", "status": "매수 권장"}
+        {"name": "NVIDIA", "code": "NVDA", "reason": "블랙웰 아키텍처 도입을 통한 압도적 기술 격차 유지, 데이터센터 매출의 지속적인 서프라이즈와 AI 가속기 시장 독점.", "status": "매수 권장"},
+        {"name": "Microsoft", "code": "MSFT", "reason": "Azure 클라우드에 코파일럿 통합을 통한 AI 수익 모델 선점, 독보적인 현금 흐름과 장기 성장 가시성 확보.", "status": "매수 권장"},
+        {"name": "Apple", "code": "AAPL", "reason": "자체 설계 AI '애플 인텔리전스' 기반의 아이폰 교체 주기 도래, 서비스 부문 비중 확대로 이익 고도화 지속.", "status": "매수 권장"},
+        {"name": "Alphabet", "code": "GOOGL", "reason": "구글 클라우드의 AI 인프라 매출 급증 및 검색 광고 성공적 방어, 유튜브 쇼츠 수익화 가속 및 웨이모 성장 기대.", "status": "매수 권장"},
+        {"name": "Amazon", "code": "AMZN", "reason": "AWS 인프라 효율화 및 AI 연계 서비스 성장 가시화, 물류 혁신을 통한 마진율 개선 및 광고 지배력 강화.", "status": "매수 권장"}
     ]
 
     with st.spinner("최신 추천주 데이터를 불러오는 중입니다..."):
         kr_recommends = get_recommendation_details_v4(kr_base)
         us_recommends = get_recommendation_details_v4(us_base)
 
-    rec_col1, rec_col2 = st.columns(2)
-    for title, recoms, col in [("#### 🇰🇷 국내 유망 종목 TOP 10", kr_recommends, rec_col1), ("#### 🇺🇸 미국 유망 종목 TOP 10", us_recommends, rec_col2)]:
-        with col:
-            st.write(title)
-            for s_item in recoms:
-                with st.container():
-                    st.markdown(f"""
-                    <div class="recommend-box">
+    # 국내 주식을 우선 배치 (수직으로 나누어 국내 주식을 상단에 강조)
+    st.write("#### 🇰🇷 국내 유망 종목 TOP 15")
+    kr_cols = st.columns(3) # 3열로 나누어 15개를 효율적으로 배치
+    for i, s_item in enumerate(kr_recommends):
+        with kr_cols[i % 3]:
+            with st.container():
+                st.markdown(f"""
+                <div class="recommend-box">
+                    <div>
                         <div class="recommend-header">
                             <div class="recommend-name">
-                                {s_item["name"]} <small style="color:#888; font-weight:normal;">{s_item["code"]}</small>
+                                {s_item["name"]} <br><small style="color:#888; font-weight:normal;">{s_item["code"]}</small>
                                 <span class="status-badge {s_item['badge_class']}">{s_item['status']}</span>
                             </div>
-                            <div class="recommend-price" style="color:{s_item['color']};">
-                                {s_item["price"]} <small>{s_item["change"]}</small>
-                            </div>
                         </div>
-                        <div class="metric-row">
-                            <span>시가총액: {s_item["market_cap"]}</span>
-                            <span>PER: {s_item["pe"]}배</span>
-                            <span>배당수익률: {s_item["div_yield"]}</span>
+                        <div class="recommend-price" style="color:{s_item['color']}; font-size: 1.1em; margin: 5px 0;">
+                            {s_item["price"]} <small>{s_item["change"]}</small>
                         </div>
-                        <div style="margin-top: 10px; font-size: 0.88em; color: #555; background-color: #f8f9fa; padding: 8px; border-radius: 6px;">
-                            <b>💡 추천 이유:</b> {s_item["reason"]}
+                        <div style="font-size: 0.82em; color: #666;">
+                            시총: {s_item["market_cap"]} | PER: {s_item["pe"]}배
+                        </div>
+                        <div style="margin-top: 8px; font-size: 0.83em; color: #555; background-color: #f1f3f5; padding: 6px; border-radius: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+                            <b>💡 이유:</b> {s_item["reason"]}
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
-                    if st.button(f"{s_item['name']} 분석 상세 보기", key=f"dtl_btn_{s_item['code']}", use_container_width=True):
-                        st.session_state['current_ticker'] = s_item['code']
-                        st.session_state['show_analysis'] = True
-                        st.rerun()
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button(f"{s_item['name']} 분석", key=f"dtl_btn_{s_item['code']}", use_container_width=True):
+                    st.session_state['current_ticker'] = s_item['code']
+                    st.session_state['show_analysis'] = True
+                    st.rerun()
+
+    st.divider()
+    st.write("#### 🇺🇸 미국 유망 종목 TOP 5")
+    us_cols = st.columns(5) # 5개를 한 줄에 배치
+    for i, s_item in enumerate(us_recommends):
+        with us_cols[i]:
+            with st.container():
+                st.markdown(f"""
+                <div class="recommend-box" style="padding: 10px; height: 160px; justify-content: flex-start;">
+                    <div class="recommend-name" style="font-size: 1em;">{s_item["name"]}</div>
+                    <div style="font-size: 0.8em; color: #888;">{s_item["code"]}</div>
+                    <div class="recommend-price" style="color:{s_item['color']}; margin: 5px 0; font-size: 1em;">
+                        {s_item["price"]} <br><small>{s_item["change"]}</small>
+                    </div>
+                    <div class="status-badge {s_item['badge_class']}" style="font-size: 0.75em; margin-left: 0; display: inline-block;">{s_item['status']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button("분석", key=f"us_dtl_{s_item['code']}", use_container_width=True):
+                    st.session_state['current_ticker'] = s_item['code']
+                    st.session_state['show_analysis'] = True
+                    st.rerun()
 
 else:
     # --- Analysis Screen ---
