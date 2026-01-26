@@ -125,15 +125,30 @@ st.markdown("""
 # Gemini 설정
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Streamlit Cloud Secrets 대응 (Secrets에 설정된 경우 우선 사용)
-if "GEMINI_API_KEY" in st.secrets:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+# Streamlit Cloud Secrets 대응
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+except:
+    pass
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-flash-latest')
 else:
-    st.warning("API 키가 설정되지 않았습니다. .env 파일을 확인해 주세요.")
+    st.error("⚠️ API 키를 찾을 수 없습니다.")
+    st.info("""
+    **배포 환경(Streamlit Cloud)에서 해결 방법:**
+    1. 앱 설정의 **Secrets** 칸에 아래 내용을 정확히 입력했는지 확인하세요:
+       ```toml
+       GEMINI_API_KEY = "본인의_API_키"
+       ```
+    2. GitHub에 올라간 `app.py` 코드에 `st.secrets` 관련 내용이 포함되어 있는지 확인하세요.
+    
+    **로컬 환경에서 해결 방법:**
+    - `.env` 파일에 `GEMINI_API_KEY=...` 내용이 있는지 확인하세요.
+    """)
+    st.stop() # 키가 없으면 실행 중단
 
 # --- AI 생성 함수 (캐싱 적용) ---
 
