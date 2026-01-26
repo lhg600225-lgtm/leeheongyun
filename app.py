@@ -137,18 +137,27 @@ if GEMINI_API_KEY:
     model = genai.GenerativeModel('gemini-flash-latest')
 else:
     st.error("⚠️ API 키를 찾을 수 없습니다.")
-    st.info("""
-    **배포 환경(Streamlit Cloud)에서 해결 방법:**
-    1. 앱 설정의 **Secrets** 칸에 아래 내용을 정확히 입력했는지 확인하세요:
-       ```toml
-       GEMINI_API_KEY = "본인의_API_키"
-       ```
-    2. GitHub에 올라간 `app.py` 코드에 `st.secrets` 관련 내용이 포함되어 있는지 확인하세요.
     
-    **로컬 환경에서 해결 방법:**
-    - `.env` 파일에 `GEMINI_API_KEY=...` 내용이 있는지 확인하세요.
+    # 디버그 정보 (배포 환경 확인용)
+    try:
+        if st.secrets:
+            available_keys = list(st.secrets.keys())
+            st.write(f"현재 인식된 설정 키: `{available_keys}`")
+        else:
+            st.write("인식된 Secrets가 전혀 없습니다.")
+    except:
+        st.write("Secrets 시스템에 접근할 수 없습니다.")
+
+    st.info("""
+    **배포 환경(Streamlit Cloud) 해결 방법:**
+    1. 앱 배포 페이지의 **Settings > Secrets**에 접속합니다.
+    2. 아래 내용을 **정확히 복사해서 붙여넣고 Save**를 누르세요:
+       ```toml
+       GEMINI_API_KEY = "AIzaSyDZ6qvY_cfC-kZqVhCLGWIh2N6Zfbl58m4"
+       ```
+    3. 저장 후 앱을 **Reboot** 해주세요.
     """)
-    st.stop() # 키가 없으면 실행 중단
+    st.stop()
 
 # --- AI 생성 함수 (캐싱 적용) ---
 
