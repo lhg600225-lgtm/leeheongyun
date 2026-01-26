@@ -164,9 +164,16 @@ else:
 # --- AI 생성 함수 (캐싱 적용) ---
 
 @st.cache_data(ttl=3600)
-def get_ai_briefing():
+def get_ai_briefing(market_context=""):
     if not GEMINI_API_KEY: return None
-    prompt = "오늘의 글로벌 경제 및 한국 증시 상황을 요약해서 3문장 이내로 브리핑해줘. 친절한 한글로 작성해."
+    prompt = f"""
+    다음은 현재 주요 시장 지수 데이터입니다:
+    {market_context}
+
+    위 데이터를 참고하여 오늘의 글로벌 핵심 경제 지표(미국 금리, 달러 환율, 국제 유가 등), 미국 3대 지수 동향, 그리고 한국 증시의 주요 섹터별 흐름과 특이 종목 이슈를 분석하여 상세하게 브리핑해줘. 
+    전문적인 투자 뉴스레터 형식으로 섹션을 나누어 작성하고, 마지막에 오늘의 투자 인사이트 1줄 요약을 포함해줘. 
+    친절하고 가독성 좋은 한글 마크다운 형식을 사용하여 500자 내외로 작성해.
+    """
     response = model.generate_content(prompt)
     return response.text
 
@@ -174,13 +181,23 @@ def get_ai_briefing():
 def get_ai_analysis(company_name, symbol):
     if not GEMINI_API_KEY: return None
     prompt = f"""
-    {company_name} ({symbol}) 주식에 대해 다음을 분석해줘:
-    1. 정성적 분석 (시장 지위, 리스크)
-    2. 정량적 분석 (수익성, 재무 건전성)
-    3. 종합 평가 및 투자 판단 (매수 권장/관망/주의 중 택1)
-    
-    결과는 깔끔한 인포그래픽 스타일로 요약해서 한글로 출력해.
-    마지막에 반드시 '상태: [매수 권장/관망/주의]' 형식을 포함해줘.
+    {company_name} ({symbol}) 기업에 대해 전문적인 주식 분석 리포트를 작성해줘. 다음 구조를 반드시 지켜줘:
+
+    ### 1. 🏢 정성적 기업 분석
+    - 시장 점유율 및 경쟁력 분석
+    - 핵심 사업 모델의 지속 가능성
+    - 현재 직면한 거시적/미시적 리스크
+
+    ### 2. 📊 정량적 재무 분석
+    - 수익성 (매출 및 이익 성장성)
+    - 재무 건전성 (부채 및 현금 흐름 상황)
+    - 주요 Valuation 지표 기반 현재 주가 수준 평가
+
+    ### 3. 🏁 종합 투자 의견
+    - **최종 의견: [매수 권장 / 관망 / 주의]** 중 하나를 반드시 선택하여 명시
+    - 근거 요약 및 향후 관전 포인트 (1분기~1년 전망)
+
+    가독성을 위해 상세한 마크다운 형식을 사용하고, 전문적인 투자 용어를 적절히 활용하여 신뢰감 있게 작성해줘.
     """
     response = model.generate_content(prompt)
     return response.text
@@ -423,9 +440,25 @@ def render_main_screen():
     st.subheader("💡 오늘의 시장 브리핑 (AI 분석)")
     if GEMINI_API_KEY:
         try:
-            briefing = get_ai_briefing()
+            # AI에게 전달할 시장 데이터 요약
+            context_list = []
+            for name, sym in indices.items():
+                d = get_index_data(sym)
+                if not d.empty:
+                    c = d['Close'].iloc[-1]
+                    p = d['Close'].iloc[-2]
+                    ch = c - p
+                    pc = (ch/p)*100
+                    context_list.append(f"{name}: {c:,.2f} ({ch:+.2f}, {pc:+.2f}%)")
+            
+            market_context = "\n".join(context_list)
+            briefing = get_ai_briefing(market_context)
             if briefing:
-                st.info(briefing)
+                st.markdown(f'''
+                <div class="ai-report-area">
+                    {briefing}
+                </div>
+                ''', unsafe_allow_html=True)
         except Exception as e:
             st.info("💡 오늘의 증시 한줄 평: 인공지능이 글로벌 경제 지표를 분석 중입니다. 변동성에 유의하며 분산 투자를 권장합니다.")
     
