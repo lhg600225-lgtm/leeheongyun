@@ -450,16 +450,16 @@ def render_main_screen():
             {"name": "기아", "symbol": "000270.KS", "reason": "전기차 라인업 강화 및 글로벌 호실적"},
             {"name": "KB금융", "symbol": "105560.KS", "reason": "금리 환경 수혜 및 주주 환원 정책 강화"},
             {"name": "신한지주", "symbol": "055550.KS", "reason": "금융 그룹 포트폴리오 다각화 및 배당 수익"},
+            {"name": "삼성SDI", "symbol": "006400.KS", "reason": "차세대 배터리 기술 경쟁력 및 수주 확대"},
+            {"name": "LG화학", "symbol": "051910.KS", "reason": "양극재 등 차세대 소재 사업 비중 확대"},
+            {"name": "포스코홀딩스", "symbol": "005490.KS", "reason": "철강 본업 회복 및 리튬 등 친환경 소재 비전"},
+            {"name": "카카오", "symbol": "035720.KS", "reason": "플랫폼 지배력 기반 수익 모델 효율화"},
+            {"name": "에코프로비엠", "symbol": "247540.KQ", "reason": "이차전지 소재 기술력 및 글로벌 생산능력"},
             {"name": "NVIDIA", "symbol": "NVDA", "reason": "AI 인프라의 필수 하드웨어 공급자"},
             {"name": "Microsoft", "symbol": "MSFT", "reason": "클라우드 서비스 및 AI 소프트웨어 통합"},
             {"name": "Apple", "symbol": "AAPL", "reason": "생태계 기반 AI 기기 교체 수요 발생"},
             {"name": "Alphabet", "symbol": "GOOGL", "reason": "Gemini AI를 통한 검색 광고 기술 고도화"},
-            {"name": "Amazon", "symbol": "AMZN", "reason": "AWS 클라우드 성장 및 물류망 효율화"},
-            {"name": "Tesla", "symbol": "TSLA", "reason": "자율주행 FSD 고도화 및 에너지 사업 확대"},
-            {"name": "Meta", "symbol": "META", "reason": "AI 기반 광고 시스템 효율화 및 메타버스 시너지"},
-            {"name": "TSMC", "symbol": "TSM", "reason": "선단 공정 경쟁력 우위 및 파운드리 점유율"},
-            {"name": "Broadcom", "symbol": "AVGO", "reason": "AI 네트워크 장비 및 반도체 포트폴리오 강화"},
-            {"name": "Netflix", "symbol": "NFLX", "reason": "콘텐츠 경쟁력 기반 가입자 및 수익성 개선"}
+            {"name": "Amazon", "symbol": "AMZN", "reason": "AWS 클라우드 성장 및 물류망 효율화"}
         ]
 
     cols = st.columns(2)
