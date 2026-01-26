@@ -444,36 +444,43 @@ def render_main_screen():
         ]
 
     cols = st.columns(2)
+    display_count = 0
     for i, rec in enumerate(recommendations):
-        col_idx = i % 2
+        # 최대 20개까지만 표시 (데이터 안정성 위해)
+        if display_count >= 20: break
+        
+        col_idx = display_count % 2
         with cols[col_idx]:
-            info = get_combined_stock_info(rec['symbol'])
-            if info:
-                # 네이버/실제 주가 데이터 반영을 위해 yfinance 실시간 정보 사용
-                price = info.get('currentPrice', info.get('regularMarketPrice', 0))
-                mkt_cap = info.get('marketCap', 0)
-                per = info.get('trailingPE', 'N/A')
-                
-                # AI 추천 리스트는 모두 '매수 권장'으로 표시 (사용자 요청 반영)
-                status = "매수 권장"
-                status_class = "status-buy"
-                badge_class = "buy-badge"
+            try:
+                info = get_combined_stock_info(rec['symbol'])
+                if info and ('currentPrice' in info or 'regularMarketPrice' in info):
+                    # 데이터 반영
+                    price = info.get('currentPrice', info.get('regularMarketPrice', 0))
+                    mkt_cap = info.get('marketCap', 0)
+                    per = info.get('trailingPE', 'N/A')
+                    
+                    status = "매수 권장"
+                    status_class = "status-buy"
+                    badge_class = "buy-badge"
 
-                st.markdown(f"""
-                <div class="recommendation-card {status_class}">
-                    <h4 style="margin-top:0;">{rec['name']} ({rec['symbol']}) <span class="{badge_class}">{status}</span></h4>
-                    <p style="font-size: 0.9rem; color: #666; margin-bottom: 10px;">{rec['reason']}</p>
-                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
-                        <span><b>현재가:</b> {price:,.0f} {info.get('currency', 'KRW')}</span>
-                        <span><b>시총:</b> {format_currency(mkt_cap)}</span>
-                        <span><b>PER:</b> {per if isinstance(per, str) else f"{per:.1f}"}</span>
+                    st.markdown(f"""
+                    <div class="recommendation-card {status_class}">
+                        <h4 style="margin-top:0;">{rec['name']} ({rec['symbol']}) <span class="{badge_class}">{status}</span></h4>
+                        <p style="font-size: 0.9rem; color: #666; margin-bottom: 10px;">{rec['reason']}</p>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                            <span><b>현재가:</b> {price:,.0f} {info.get('currency', 'KRW')}</span>
+                            <span><b>시총:</b> {format_currency(mkt_cap)}</span>
+                            <span><b>PER:</b> {per if isinstance(per, str) else f"{per:.1f}"}</span>
+                        </div>
                     </div>
-                </div>
-                """, unsafe_allow_html=True)
-                if st.button(f"{rec['name']} 상세 분석", key=f"btn_{rec['symbol']}_{i}"):
-                    st.session_state.current_page = "analysis"
-                    st.session_state.search_symbol = rec['symbol']
-                    st.rerun()
+                    """, unsafe_allow_html=True)
+                    if st.button(f"{rec['name']} 상세 분석", key=f"btn_{rec['symbol']}_{i}"):
+                        st.session_state.current_page = "analysis"
+                        st.session_state.search_symbol = rec['symbol']
+                        st.rerun()
+                    display_count += 1
+            except:
+                continue # 개별 종목 로딩 실패 시 건너뜀
 
 def render_analysis_screen(symbol):
     # 실제 티커 검색 로직 (한글 -> 티커)
