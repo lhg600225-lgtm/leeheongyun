@@ -1,834 +1,649 @@
 import streamlit as st
 import yfinance as yf
-import plotly.graph_objects as go
 import pandas as pd
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
 import google.generativeai as genai
 import os
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
-# Load environment variables
+# 설정
+st.set_page_config(page_title="금융 분석 AI 비서", layout="wide")
 load_dotenv()
 
-# Page setting
-st.set_page_config(page_title="금융 데이터 분석 AI", layout="wide", initial_sidebar_state="expanded")
-
-# Simple & Bright Style
+# CSS 스타일 적용 (심플하고 밝은 디자인)
 st.markdown("""
     <style>
-    .main {
-        background-color: #f8f9fa;
+    /* 전역 글자색 및 배경 강제 설정 (가시성 확보 최우선) */
+    html, body, [data-testid="stAppViewContainer"] {
+        background-color: #ffffff !important;
+        color: #111111 !important;
     }
+    
+    /* 모든 마크다운 요소(본문, 리스트, 강조 등) 색상 강제 */
+    [data-testid="stMarkdownContainer"], 
+    [data-testid="stMarkdownContainer"] * {
+        color: #111111 !important;
+        font-family: 'Pretendard', sans-serif;
+    }
+
+    /* 제목 색상 별도 강조 */
+    h1, h2, h3, h4, h5, h6 {
+        color: #000000 !important;
+        font-weight: 800 !important;
+    }
+
+    /* AI 분석 리포트 영역 강조 */
+    .ai-report-area {
+        background-color: #fcfcfc !important;
+        padding: 30px !important;
+        border: 2px solid #eeeeee !important;
+        border-radius: 15px !important;
+        color: #111111 !important;
+    }
+
     .stMetric {
         background-color: #ffffff !important;
-        border: 1px solid #dee2e6;
-        padding: 10px;
-        border-radius: 8px;
+        border: 1px solid #eeeeee !important;
+        padding: 15px !important;
+        border-radius: 10px !important;
     }
-    [data-testid="stMetricValue"] {
-        color: #000000 !important;
-    }
-    [data-testid="stMetricLabel"] {
-        color: #333333 !important;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: transparent;
-        border-radius: 4px 4px 0px 0px;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-    }
-    .status-card {
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        font-weight: bold;
-        text-align: center;
-        margin-bottom: 20px;
-    }
-    .recommend-box {
-        background-color: white;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #e9ecef;
-        margin-bottom: 10px;
-        color: #333;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        height: 250px; /* 고정 높이 설정 */
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-    }
-    .metric-row {
-        display: flex;
-        justify-content: space-between;
-        font-size: 0.85em;
-        margin-top: 6px;
-        color: #666;
-    }
-    .recommend-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 5px;
-    }
-    .recommend-name {
-        font-size: 1.1em;
-        font-weight: bold;
-        color: #1f1f1f;
-    }
-    .recommend-price {
-        font-size: 1.05em;
-        font-weight: 700;
-        text-align: right;
-    }
-    .status-badge {
-        padding: 2px 8px;
-        border-radius: 12px;
-        font-size: 0.75em;
-        font-weight: 600;
-        color: white;
-        margin-left: 8px;
-    }
-    .badge-buy { background-color: #28a745; }
-    .badge-wait { background-color: #ffc107; color: black; }
-    .badge-watch { background-color: #dc3545; }
+    
+    [data-testid="stMetricValue"] > div { color: #000000 !important; font-weight: 700 !important; }
+    [data-testid="stMetricLabel"] > div { color: #333333 !important; }
+    
+    /* 탭 가독성 */
+    .stTabs [data-baseweb="tab"] { color: #555555 !important; }
+    .stTabs [aria-selected="true"] { color: #007bff !important; font-weight: bold !important; }
 
-    /* Index Card Enhancement */
-    .index-card {
-        padding: 5px 10px;
-        text-align: center;
-        background-color: transparent;
-        border: none;
+    /* 버튼 스타일 (흰색 글씨로 선명하게) */
+    [data-testid="stBaseButton-secondary"], [data-testid="stBaseButton-primary"], .stButton>button {
+        background-color: #007bff !important;
+        border: none !important;
+        height: 3rem !important;
+        border-radius: 8px !important;
     }
-    .index-up {
-        background-color: #fff5f5;
-        border-left: 5px solid #e03131;
+    
+    /* 버튼 내부 텍스트 강제 설정 */
+    .stButton>button div p, .stButton>button div {
+        color: #ffffff !important;
+        font-weight: 900 !important;
+        font-size: 1.1rem !important;
     }
-    .index-down {
-        background-color: #f3f8ff;
-        border-left: 5px solid #1971c2;
+
+    .stButton>button:hover {
+        background-color: #0056b3 !important;
     }
-    .index-name {
-        font-size: 1.25em;
-        font-weight: 800;
-        color: #212529;
-        margin-bottom: 5px;
+    .stButton>button:hover div p, .stButton>button:hover div {
+        color: #ffffff !important;
     }
-    .index-value {
-        font-size: 1.5em;
-        font-weight: 800;
-        margin-bottom: 2px;
+
+    /* 입력창과 버튼 수직 정렬 및 높이 일치 */
+    div.row-widget.stButton {
+        margin-top: 0px !important; /* 라벨을 숨겼으므로 마진 제거 */
     }
-    .index-delta-up {
-        color: #e03131;
-        font-weight: 600;
-        font-size: 1em;
+    
+    /* 입력창 높이 고정 */
+    [data-testid="stTextInputRootElement"] {
+        height: 3rem !important;
+        display: flex !important;
+        align-items: center !important;
     }
-    .index-delta-down {
-        color: #1971c2;
-        font-weight: 600;
-        font-size: 1em;
+    
+    [data-testid="stTextInputRootElement"] > div {
+        height: 100% !important;
     }
-    .sparkline-container {
-        margin-top: 10px;
-        height: 100px;
+    .recommendation-card {
+        padding: 1.5rem;
+        border-radius: 15px;
+        background-color: white;
+        color: #333;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 1rem;
+        border-left: 5px solid #ddd;
     }
+    .status-buy { border-left-color: #28a745; }
+    .status-hold { border-left-color: #ffc107; }
+    .status-caution { border-left-color: #dc3545; }
+    
+    .buy-badge { 
+        background-color: #00c853 !important; 
+        color: #ffffff !important; 
+        padding: 4px 10px !important; 
+        border-radius: 6px !important; 
+        font-size: 0.9rem !important; 
+        font-weight: 900 !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    }
+    .hold-badge { background-color: #ffc107; color: black; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
+    .caution-badge { background-color: #dc3545; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
     </style>
     """, unsafe_allow_html=True)
 
-# Helper Functions
-def get_stock_data(ticker):
-    try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        
-        # 국내 주식인 경우 네이버 증권 데이터로 보정
-        if ticker.endswith(".KS") or ticker.endswith(".KQ"):
-            clean_code = ticker.split(".")[0]
-            naver_data = get_naver_stock_info(clean_code)
-            if naver_data:
-                # 네이버 데이터를 우선순위로 병합
-                info.update({
-                    'marketCap': naver_data.get('marketCap', info.get('marketCap')),
-                    'trailingPE': naver_data.get('trailingPE', info.get('trailingPE')),
-                    'forwardPE': naver_data.get('forwardPE', info.get('forwardPE'))
-                })
-        return stock, info
-    except Exception as e:
-        return None, None
+# Gemini 설정
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-flash-latest')
+else:
+    st.warning("API 키가 설정되지 않았습니다. .env 파일을 확인해 주세요.")
 
-def format_ticker(query):
-    query = query.strip().upper()
-    common_mapping = {
-        "삼성전자": "005930.KS", "SK하이닉스": "000660.KS", "카카오": "035720.KS",
-        "NAVER": "035420.KS", "네이버": "035420.KS", "현대차": "005380.KS",
-        "LG에너지솔루션": "373220.KS", "엔비디아": "NVDA", "애플": "AAPL",
-        "테슬라": "TSLA", "마이크로소프트": "MSFT", "구글": "GOOGL"
-    }
-    if query in common_mapping:
-        return common_mapping[query]
-    if query.isdigit() and len(query) == 6:
-        return query + ".KS"
-    if "." in query and any(query.endswith(ext) for ext in [".KS", ".KQ"]):
-        return query
-    try:
-        search = yf.Search(query, max_results=5)
-        if hasattr(search, 'quotes') and search.quotes:
-            for quote in search.quotes:
-                symbol = quote.get('symbol', '')
-                if symbol.endswith(".KS") or symbol.endswith(".KQ"):
-                    return symbol
-            return search.quotes[0].get('symbol', query)
-    except:
-        pass
-    return query
+# --- AI 생성 함수 (캐싱 적용) ---
 
-def format_market_cap(val, currency="KRW"):
-    if not val or not isinstance(val, (int, float)):
-        return "정보 없음"
-    # 국내 주식(원화) 처리
-    if currency == "KRW":
-        if val >= 1e12: return f"{val / 1e12:,.1f}조"
-        elif val >= 1e8: return f"{val / 1e8:,.0f}억"
-    # 해외 주식(달러 등) 처리
-    else:
-        if val >= 1e12: return f"${val / 1e12:,.1f}T"
-        elif val >= 1e9: return f"${val / 1e9:,.1f}B"
-        elif val >= 1e6: return f"${val / 1e6:,.1f}M"
-    return f"{val:,.0f}"
+@st.cache_data(ttl=3600)
+def get_ai_briefing():
+    if not GEMINI_API_KEY: return None
+    prompt = "오늘의 글로벌 경제 및 한국 증시 상황을 요약해서 3문장 이내로 브리핑해줘. 친절한 한글로 작성해."
+    response = model.generate_content(prompt)
+    return response.text
 
-def get_naver_stock_info(ticker_code):
+@st.cache_data(ttl=3600)
+def get_ai_analysis(company_name, symbol):
+    if not GEMINI_API_KEY: return None
+    prompt = f"""
+    {company_name} ({symbol}) 주식에 대해 다음을 분석해줘:
+    1. 정성적 분석 (시장 지위, 리스크)
+    2. 정량적 분석 (수익성, 재무 건전성)
+    3. 종합 평가 및 투자 판단 (매수 권장/관망/주의 중 택1)
+    
+    결과는 깔끔한 인포그래픽 스타일로 요약해서 한글로 출력해.
+    마지막에 반드시 '상태: [매수 권장/관망/주의]' 형식을 포함해줘.
     """
-    네이버 증권에서 시총, PER, PBR 등을 직접 가져와 정확도를 높입니다.
-    ticker_code 예: 005930
-    """
-    try:
-        url = f"https://finance.naver.com/item/main.naver?code={ticker_code}"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        res = requests.get(url, headers=headers)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, 'html.parser')
-        
-        info = {}
-        
-        # 시가총액 추출
-        try:
-            m_cap_text = soup.select_one('#_market_sum').text.strip().replace(',', '').replace('\t', '').replace('\n', '')
-            # '조'와 '억' 단위 파싱 (예: 429조8244)
-            if '조' in m_cap_text:
-                parts = m_cap_text.split('조')
-                jo = int(parts[0]) * 1e12
-                ok = int(parts[1]) * 1e8 if parts[1] else 0
-                info['marketCap'] = jo + ok
-            else:
-                info['marketCap'] = int(m_cap_text) * 1e8
-        except: pass
+    response = model.generate_content(prompt)
+    return response.text
 
-        # PER, PBR 등 재무 지표 추출
-        try:
-            # 네이버 증권 우측 상단 지표 영역
-            # PER: id="_per", PBR: id="_pbr"
-            per_tag = soup.select_one('#_per')
-            if per_tag: info['trailingPE'] = float(per_tag.text.strip().replace(',', ''))
+@st.cache_data(ttl=86400) # 24시간 캐시
+def load_krx_symbols():
+    """KRX에서 전체 종목 리스트를 가져와 {이름: 티커} 매핑을 생성합니다."""
+    try:
+        # 코스피/코스닥 종목 리스트 URL (KRX KIND - 엑셀 다운로드 형식)
+        # 종목코드 6자리 보존을 위해 파일 형식을 고려한 로직
+        base_url = 'http://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13'
+        
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        
+        # 코스피/코스닥 한 번에 가져오기 시도
+        res = requests.get(base_url, headers=headers)
+        res.encoding = 'cp949' # KRX는 보통 CP949 사용
+        
+        df = pd.read_html(res.text, header=0)[0]
+        
+        # 필요한 컬럼만 추출 및 정제
+        df = df[['회사명', '종목코드']]
+        df['종목코드'] = df['종목코드'].astype(str).str.zfill(6)
+        
+        # 티커 접미사 결정을 위해 마켓 정보가 필요할 수 있음
+        # 간단하게 .KS로 시도 후 실패 시 .KQ로 넘기는 것보다, yfinance 검색 효율을 위해 분리 시도
+        # 하지만 read_html 결과엔 마켓 구분이 명확치 않을 수 있으므로 우선 매핑 생성
+        
+        mapping = {}
+        for _, row in df.iterrows():
+            name = str(row['회사명']).strip()
+            code = str(row['종목코드']).strip()
+            # 국내 주식은 우선 .KS(코스피)로 매핑하고, yfinance 연동 시 보정
+            mapping[name] = code + ".KS"
+            # 소문자 대응 등
+            mapping[name.lower()] = code + ".KS"
             
-            pbr_tag = soup.select_one('#_pbr')
-            if pbr_tag: info['forwardPE'] = float(pbr_tag.text.strip().replace(',', '')) # PBR을 대체용으로 활용하거나 별도 처리
-        except: pass
-        
-        return info
-    except:
+        return mapping
+    except Exception as e:
+        print(f"Error loading KRX symbols: {e}")
         return {}
 
-def create_sparkline(history_data, color):
-    """Creates a small sparkline chart using Plotly."""
+@st.cache_data(ttl=86400) # 하루 한 번만 갱신 (할당량 절약)
+def get_dynamic_recommendations():
+    if not GEMINI_API_KEY: return []
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    prompt = f"""
+    오늘 날짜({current_date})를 기준으로 향후 성장세가 엿보이는 유망 종목 20개를 선정해줘.
+    - 한국 주식 15개, 미국 주식 5개로 구성할 것.
+    - 결과는 반드시 아래의 JSON 리스트 형식으로만 출력할 것 (다른 텍스트 금지):
+    [
+      {{"name": "종목이름", "symbol": "티커(한국은 .KS 또는 .KQ 포함)", "reason": "추천 사유 (한글)"}},
+      ...
+    ]
+    - 한국 주식 예시: 삼성전자 (005930.KS), 에코프로비엠 (247540.KQ)
+    - 미국 주식 예시: NVDA, AAPL 등
+    """
+    try:
+        response = model.generate_content(prompt)
+        import json
+        import re
+        # JSON 부분만 추출 (가끔 AI가 백틱을 포함함)
+        match = re.search(r'\[.*\]', response.text, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+        return []
+    except Exception as e:
+        print(f"Error in dynamic recommendations: {e}")
+        return []
+
+@st.cache_data(ttl=600) # 10분 캐싱
+def get_naver_finance_info(symbol):
+    """네이버 증시에서 국내 주식 정보를 긁어옵니다."""
+    try:
+        # 티커에서 숫자만 추출 (예: 005930.KS -> 005930)
+        code = ''.join(filter(str.isdigit, symbol))
+        if not code or len(code) != 6: return None
+        
+        url = f"https://finance.naver.com/item/main.naver?code={code}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=headers)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        
+        # 주가
+        price_tag = soup.select_one(".no_today .blind")
+        price = int(price_tag.text.replace(',', '')) if price_tag else 0
+        
+        # 전일비
+        diff_tag = soup.select_one(".no_exday .blind")
+        diff = int(diff_tag.text.replace(',', '')) if diff_tag else 0
+        ico = soup.select_one(".no_exday em span")
+        if ico and '상승' not in ico.text and '상한' not in ico.text:
+            diff = -diff
+            
+        # 시가총액 파싱 보강
+        mkt_cap_tag = soup.select_one("#_market_sum")
+        mkt_cap = 0
+        if mkt_cap_tag:
+            mkt_cap_str = mkt_cap_tag.text.replace(',', '').replace('억원', '').replace('원', '').strip()
+            # "419조 723" 또는 "8,500" 등의 형식 처리
+            if '조' in mkt_cap_str:
+                parts = mkt_cap_str.split('조')
+                mkt_cap += int(parts[0].strip()) * 1e12
+                if parts[1].strip():
+                    mkt_cap += int(parts[1].strip()) * 1e8
+            else:
+                mkt_cap = int(mkt_cap_str.strip()) * 1e8
+            
+        # PER 파싱 보강
+        per_tag = soup.select_one("#_per")
+        per = per_tag.text.replace('배', '').replace(',', '').strip() if per_tag else 'N/A'
+        
+        return {
+            'currentPrice': price,
+            'priceDiff': diff,
+            'marketCap': mkt_cap,
+            'trailingPE': per,
+            'currency': 'KRW',
+            'source': 'naver'
+        }
+    except Exception as e:
+        print(f"Naver Scrape Error for {symbol}: {e}")
+        return None
+
+def get_combined_stock_info(symbol):
+    """네이버를 우선하고, 실패하거나 해외 주식이면 yfinance를 사용합니다."""
+    # 국내 주식 여부 확인 (.KS, .KQ)
+    if '.KS' in symbol or '.KQ' in symbol:
+        naver = get_naver_finance_info(symbol)
+        if naver:
+            # yfinance는 회사명 등을 위해 보조적으로 사용
+            yf_info = get_stock_info(symbol)
+            if yf_info:
+                naver['longName'] = yf_info.get('longName', symbol)
+                naver['sector'] = yf_info.get('sector', 'N/A')
+                naver['previousClose'] = yf_info.get('previousClose', naver['currentPrice'] - naver['priceDiff'])
+            return naver
+            
+    return get_stock_info(symbol)
+
+# --- 데이터 페칭 함수 ---
+
+@st.cache_data(ttl=3600)
+def get_index_data(symbol):
+    ticker = yf.Ticker(symbol)
+    df = ticker.history(period="1y")
+    return df
+
+def format_currency(value):
+    if value >= 1e12:
+        return f"{value / 1e12:.1f}조"
+    elif value >= 1e8:
+        return f"{value / 1e8:.1f}억"
+    return str(value)
+
+def get_stock_info(symbol):
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        return info
+    except:
+        return None
+
+# --- UI 컴포넌트 ---
+
+def draw_index_chart(df, title):
     fig = go.Figure()
-    # 데이터의 최소/최대값을 구하여 Y축 범위를 타이트하게 설정 (하단 빈 공간 제거)
-    min_val = history_data['Close'].min()
-    max_val = history_data['Close'].max()
-    padding = (max_val - min_val) * 0.1
-    
-    fig.add_trace(go.Scatter(
-        x=history_data.index,
-        y=history_data['Close'],
-        mode='lines',
-        line=dict(color=color, width=2),
-        # fill='tozeroy'를 제거하여 하단 여백 발생 방지
-        hovertemplate="<b>%{x|%Y-%m-%d}</b><br>지수: %{y:,.2f}<extra></extra>"
-    ))
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name=title, line=dict(color='#007bff')))
     fig.update_layout(
-        margin=dict(l=0, r=0, t=10, b=30), # 라벨 표시 공간 확보
-        height=230, # 라벨 공간을 위해 전체 높이 소폭 상향
-        showlegend=False,
-        hovermode='x unified',
+        title=f"{title} 1년 추이",
+        xaxis_title="날짜",
+        yaxis_title="지수",
         xaxis=dict(
-            visible=True,
-            showticklabels=True,
-            tickformat="%y-%m-%d", # 년월일(단축형)
-            dtick="M3", # 3개월 단위로 표시하여 겹침 방지
-            tickfont=dict(size=10, color="#888")
+            tickformat='%Y-%m-%d',
+            tickfont=dict(color='#000000', size=12, family="Arial Black"),
+            title_font=dict(color='#000000', size=14),
+            tickangle=-45,
+            showgrid=True,
+            gridcolor='#eeeeee'
         ),
         yaxis=dict(
-            visible=False,
-            range=[min_val - padding, max_val + padding]
+            tickfont=dict(color='#000000', size=12),
+            title_font=dict(color='#000000', size=14),
+            showgrid=True,
+            gridcolor='#eeeeee'
         ),
-        paper_bgcolor='white',
+        hovermode="x unified",
+        margin=dict(l=20, r=20, t=40, b=20),
+        height=400,
         plot_bgcolor='white',
+        paper_bgcolor='white'
     )
-    return fig
+    st.plotly_chart(fig, use_container_width=True)
 
-# Gemini AI Setup
-st.sidebar.markdown("### 🔑 API 설정")
-# key를 지정하여 세션 상태 유지 보장
-user_api_key = st.sidebar.text_input("개인 Gemini API 키 입력", type="password", key="user_api_key_input", help="공용 할당량이 초과된 경우 자신의 API 키를 입력하면 즉시 해결됩니다.")
-system_api_key = os.getenv("GOOGLE_API_KEY")
-api_key = user_api_key if user_api_key else system_api_key
+def render_main_screen():
+    st.title("💰 오늘의 증시 분석 및 인공지능 추천")
 
-# 현재 활성화된 키 상태 표시
-if user_api_key:
-    masked_key = f"{user_api_key[:4]}...{user_api_key[-4:]}" if len(user_api_key) > 8 else "****"
-    st.sidebar.success(f"✅ 개인 API 키 활성화됨 ({masked_key})")
-elif system_api_key:
-    st.sidebar.info("ℹ️ 공용 API 키 사용 중")
-else:
-    st.sidebar.error("⚠️ API 키가 없습니다.")
+    # 1) 종목명 입력 단추
+    with st.container():
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            search_query = st.text_input("", placeholder="분석할 국내 종목명을 입력하세요 (예: 삼성전자, SK하이닉스)", label_visibility="collapsed")
+        with col2:
+            if st.button("분석 시작", use_container_width=True):
+                if search_query:
+                    st.session_state.current_page = "analysis"
+                    st.session_state.search_symbol = search_query # 실제 티커 변환 필요
+                    st.rerun()
 
-if api_key:
-    try:
-        genai.configure(api_key=api_key)
-    except Exception as e:
-        st.sidebar.error(f"API 키 설정 오류: {str(e)}")
+    st.markdown("---")
 
-st.sidebar.markdown(f"""
-<div style="background-color: #fff3cd; padding: 10px; border-radius: 5px; border: 1px solid #ffeeba; color: #856404; font-size: 0.85em;">
-    <b>💡 할당량 초과 해결 방법</b><br>
-    <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>에서 <b>무료 API 키</b>를 발급받아 위 입력란에 넣으시면 즉시 정상 작동합니다.
-</div>
-""", unsafe_allow_html=True)
-
-# Sidebar Utilities
-with st.sidebar:
-    st.title("🛠️ 설정 및 도구")
+    # 2) 글로벌 주요 지수 현황
+    st.subheader("🌐 글로벌 주요 지수 현황")
+    indices = {
+        "코스피": "^KS11",
+        "코스닥": "^KQ11",
+        "S&P 500": "^GSPC",
+        "나스닥": "^IXIC"
+    }
     
-    # API Connection Test
-    if st.button("🔍 API 연결 및 모델 진단"):
-        if not api_key:
-            st.error("진단할 API 키가 없습니다.")
-        else:
-            with st.spinner("진단 중..."):
-                try:
-                    genai.configure(api_key=api_key)
-                    available_models = []
-                    for m in genai.list_models():
-                        if 'generateContent' in m.supported_generation_methods:
-                            available_models.append(m.name)
-                    st.success(f"연결 성공! 모델: {len(available_models)}개")
-                    with st.expander("가용 모델 목록"):
-                        st.write(available_models)
-                except Exception as ex:
-                    st.error(f"진단 실패: {str(ex)}")
-    st.divider()
-    
-    if st.button("🔄 캐시 지우기 및 앱 초기화"):
-        st.cache_data.clear()
-        # 세션 상태 전체 초기화로 확실한 리셋 보장
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.success("앱이 초기화되었습니다!")
-        st.rerun()
-    st.divider()
-    st.info("""
-    **할당량 초과 문제 해결 안내:**
-    1. '캐시 지우기' 버튼을 클릭해 보세요.
-    2. Streamlit Cloud의 Dashboard -> Settings -> Secrets에 API 키가 정확히 입력되었는지 확인하세요.
-    3. 무료 API 키는 분당 요청 제한이 엄격합니다.
-    """)
-
-def get_ai_analysis(ticker, info, current_api_key):
-    if not current_api_key:
-        return "⚠️ **API 키가 설정되지 않았습니다.**\n\n측면 바의 안내를 확인하여 Gemini API 키를 설정해주세요."
-
-    # 호출 시점에 API 키 재설정 (병렬성 및 세션 독립성 보장)
-    try:
-        genai.configure(api_key=current_api_key)
-    except: pass
-
-    st.markdown("""
-        <style>
-        .ai-report h1, .ai-report h2 { font-size: 1.25rem !important; margin-top: 10px; margin-bottom: 5px; }
-        .ai-report h3 { font-size: 1.1rem !important; }
-        .ai-report p, .ai-report li { font-size: 0.95rem; line-height: 1.5; }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    last_error = ""
-    # 할당량이 가장 넉넉한 Lite 모델부터 순차적으로 시도
-    for model_name in ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.0-flash', 'gemini-pro-latest']:
-        try:
-            model = genai.GenerativeModel(model_name)
-            prompt = f"주식 분석 대상: {ticker} ({info.get('longName', ticker)})\n기업 요약: {info.get('longBusinessSummary', '정보 없음')}\n위 데이터를 바탕으로 한국어로 전문적인 투자 분석 보고서를 작성해줘:\n1. 정성적 분석 (시장 경쟁력, 주요 리스크)\n2. 정량적 분석 (수익성 지표, 재무 지표 기반 건전성)\n3. 종합 투자 의견: '매수 권장', '관망', '주의' 중 하나를 선택하고 명확한 근거 제시.\n※ 주의사항: 가독성을 위해 큰 제목(#) 대신 중간 제목(###)만 사용하여 내용을 구조화해줘."
-            response = model.generate_content(prompt)
-            return f'<div class="ai-report">{response.text}</div>'
-        except Exception as e:
-            last_error = str(e)
-            if "429" in last_error:
-                break # 할당량 초과는 바로 중단하여 계정 보호
-            if "404" in last_error or "not found" in last_error.lower():
-                continue # 모델이 없으면 다음 모델 시도
-            break
-    
-    if "429" in last_error:
-        return "⚠️ **AI 서비스 할당량이 일시적으로 초과되었습니다.** 무료 버전 제한(RPM)에 도달했습니다. 약 1분 후 다시 시도하시거나, 사이드바에 개인 API 키를 입력해 주세요."
-    return f"AI 분석 생성 실패: {last_error}"
-
-@st.cache_data(ttl=3600) # 1시간 동안 캐시 유지
-def get_market_briefing_v2(index_info, current_api_key):
-    if not current_api_key: return "지수 정보를 통해 분석할 AI 키가 없습니다."
-    
-    # 호출 시점에 API 키 재설정 (캐시 무효화 및 키 갱신 보장)
-    try:
-        genai.configure(api_key=current_api_key)
-    except: pass
-
-    if not index_info or index_info == "{}":
-        return "현재 지수 데이터를 불러오는 데 실패하여 브리핑을 생성할 수 없습니다."
-        
-    last_error = ""
-    for model_name in ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.0-flash', 'gemini-pro-latest']:
-        try:
-            model = genai.GenerativeModel(model_name)
-            prompt = f"다음 글로벌 지수 데이터를 바탕으로 현재 시장 상황 및 전망을 3문장 이내의 아주 전문적인 한국어로 요약해줘: {index_info}"
-            response = model.generate_content(prompt)
-            if response and response.text:
-                return response.text
-        except Exception as e:
-            last_error = str(e)
-            if "429" in last_error:
-                break
-            if "404" in last_error or "not found" in last_error.lower():
-                continue
-            break
-            
-    if "429" in last_error:
-        raise Exception(f"QUOTA_EXCEEDED: {last_error}")
-    raise Exception(last_error or "사용 가능한 Gemini 모델을 찾을 수 없습니다.")
-
-# Session State Initialization
-if 'current_ticker' not in st.session_state:
-    st.session_state['current_ticker'] = "삼성전자"
-if 'ticker_history' not in st.session_state:
-    st.session_state['ticker_history'] = []
-if 'show_analysis' not in st.session_state:
-    st.session_state['show_analysis'] = False
-if 'last_briefing' not in st.session_state:
-    st.session_state['last_briefing'] = None
-
-# Main UI
-st.title("🛡️ 실시간 AI 주식 분석기 v2.8")
-
-# 사이드바 안내 (API 키가 없을 경우에만 표시)
-if not api_key:
-    st.warning("👈 **왼쪽 사이드바**가 보이지 않는다면 화면 좌측 상단의 **'>' 모양 화살표**를 클릭하여 **[개인 Gemini API 키]**를 입력해 주세요.")
-
-# Search Bar Area
-col_search1, col_search2, col_search3 = st.columns([3, 1, 1], vertical_alignment="bottom") # 수직 정렬 하단 고정
-with col_search1:
-    user_input = st.text_input(
-        "검색어 입력", # 시각적으로는 숨겨짐
-        placeholder="종목명 또는 티커(코드) 입력 (예: 삼성전자, AAPL, 005930)", 
-        value=st.session_state['current_ticker'] if st.session_state['show_analysis'] else "", 
-        key="main_search",
-        label_visibility="collapsed"
-    )
-
-with col_search2:
-    if st.button("분석하기", use_container_width=True):
-        input_val = st.session_state.main_search.strip()
-        if input_val:
-            if st.session_state['show_analysis'] and input_val != st.session_state['current_ticker']:
-                st.session_state['ticker_history'].append(st.session_state['current_ticker'])
-            st.session_state['current_ticker'] = input_val
-            st.session_state['show_analysis'] = True
-            st.rerun()
-
-with col_search3:
-    if st.button("⬅️ 되돌리기", use_container_width=True):
-        if len(st.session_state['ticker_history']) > 0:
-            prev = st.session_state['ticker_history'].pop()
-            st.session_state['current_ticker'] = prev
-            st.session_state['show_analysis'] = True
-        else:
-            st.session_state['show_analysis'] = False
-        st.rerun()
-
-st.divider()
-
-# --- Conditional Rendering ---
-if not st.session_state['show_analysis']:
-    # --- Home Screen ---
-    st.write("### 🌍 글로벌 주요 지수 현황 (최근 1년 추이)")
-    indices = {"코스피": "^KS11", "코스닥": "^KQ11", "S&P 500": "^GSPC", "나스닥": "^IXIC"}
-    idx_cols = st.columns(4)
-    index_summary_data = {}
-
-    for (name, symbol), col in zip(indices.items(), idx_cols):
-        try:
-            t_obj = yf.Ticker(symbol)
-            # Fetch 1 year for the chart and 2 days for the change percent
-            idx_hist_1y = t_obj.history(period="1y")
-            if not idx_hist_1y.empty and len(idx_hist_1y) >= 2:
-                cv = idx_hist_1y['Close'].iloc[-1]
-                pv = idx_hist_1y['Close'].iloc[-2]
-                dv = cv - pv
-                dp = (dv / pv) * 100
-                
-                card_class = "index-up" if dv >= 0 else "index-down"
-                delta_class = "index-delta-up" if dv >= 0 else "index-delta-down"
-                arrow = "▲" if dv >= 0 else "▼"
-                color = "#e03131" if dv >= 0 else "#1971c2"
-                
-                with col:
-                    # 하나의 테두리 박스 안에 수치와 차트를 통합
-                    with st.container(border=True):
-                        # 배경색을 흰색으로 통일
-                        bg_color = "#ffffff"
-                        st.markdown(f"""
-                        <div class="index-card" style="background-color: {bg_color}; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid {color};">
-                            <div class="index-name">{name}</div>
-                            <div class="index-value" style="color: #212529;">{cv:,.2f}</div>
-                            <div class="{delta_class}">{arrow} {abs(dv):,.2f} ({dp:+.2f}%)</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        spark_fig = create_sparkline(idx_hist_1y, color)
-                        st.plotly_chart(spark_fig, use_container_width=True, config={'displayModeBar': False})
-                
-                # 지수 데이터를 정수 및 소수점 1자리로 제한하여 캐시 효율성 증대 (너무 잦은 AI 호출 방지)
-                index_summary_data[name] = f"{int(cv):,} ({dp:+.1f}%)"
+    idx_tabs = st.tabs(list(indices.keys()))
+    for tab, (name, symbol) in zip(idx_tabs, indices.items()):
+        with tab:
+            data = get_index_data(symbol)
+            if not data.empty:
+                current_val = data['Close'].iloc[-1]
+                prev_val = data['Close'].iloc[-2]
+                delta = current_val - prev_val
+                st.metric(label=f"{name} 현재 지수", value=f"{current_val:,.2f}", delta=f"{delta:,.2f} ({delta/prev_val*100:.2f}%)")
+                draw_index_chart(data, name)
             else:
-                curr_p = t_obj.info.get('regularMarketPrice', 0)
-                col.markdown(f'<div class="index-card">{name}<br><b>{curr_p:,.2f}</b><br><small>데이터 대기 중</small></div>', unsafe_allow_html=True)
-        except: col.write(f"{name} 로딩 실패")
+                st.error(f"{name} 데이터를 불러올 수 없습니다.")
 
-    # --- AI Briefing Section ---
-    st.write("#### 📊 AI 시장 브리핑")
+    st.markdown("---")
+
+    # 3) 오늘의 시장 브리핑
+    st.subheader("💡 오늘의 시장 브리핑 (AI 분석)")
+    if GEMINI_API_KEY:
+        try:
+            briefing = get_ai_briefing()
+            if briefing:
+                st.info(briefing)
+        except Exception as e:
+            st.error(f"브리핑을 생성하는 중 오류가 발생했습니다: {str(e)}")
     
-    if st.session_state['last_briefing'] is None:
-        # 자동 호출 대신 버튼 클릭 시에만 호출하도록 변경 (할당량 보호)
-        if st.button("🚀 AI 시장 브리핑 생성 (무료 API 이용)", use_container_width=True):
-            with st.spinner("AI 시장 브리핑 생성 중..."):
-                try:
-                    # 최신 api_key를 인자로 전달하여 캐시 무효화 보장
-                    briefing = get_market_briefing_v2(str(index_summary_data), api_key)
-                    st.session_state['last_briefing'] = briefing
+    st.markdown("---")
+
+    # 4) AI 추천 유망 종목
+    st.subheader("🚀 AI 추천 유망 종목 (오늘의 Top 20)")
+    
+    with st.spinner("오늘의 유망 종목을 선정 중..."):
+        recommendations = get_dynamic_recommendations()
+    
+    if not recommendations:
+        st.warning("추천 종목을 불러오는 중 오류가 발생했습니다. 기본 데이터를 표시합니다.")
+        # 폴백 데이터 (기존 데이터 유지)
+        recommendations = [
+            {"name": "삼성전자", "symbol": "005930.KS", "reason": "반도체 업황 회복 및 AI 수요"},
+            {"name": "SK하이닉스", "symbol": "000660.KS", "reason": "HBM 시장 주도권"},
+            {"name": "NVIDIA", "symbol": "NVDA", "reason": "AI 칩 시장 압도적 점유율"}
+        ]
+
+    cols = st.columns(2)
+    for i, rec in enumerate(recommendations):
+        col_idx = i % 2
+        with cols[col_idx]:
+            info = get_combined_stock_info(rec['symbol'])
+            if info:
+                # 네이버/실제 주가 데이터 반영을 위해 yfinance 실시간 정보 사용
+                price = info.get('currentPrice', info.get('regularMarketPrice', 0))
+                mkt_cap = info.get('marketCap', 0)
+                per = info.get('trailingPE', 'N/A')
+                
+                # AI 추천 리스트는 모두 '매수 권장'으로 표시 (사용자 요청 반영)
+                status = "매수 권장"
+                status_class = "status-buy"
+                badge_class = "buy-badge"
+
+                st.markdown(f"""
+                <div class="recommendation-card {status_class}">
+                    <h4 style="margin-top:0;">{rec['name']} ({rec['symbol']}) <span class="{badge_class}">{status}</span></h4>
+                    <p style="font-size: 0.9rem; color: #666; margin-bottom: 10px;">{rec['reason']}</p>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                        <span><b>현재가:</b> {price:,.0f} {info.get('currency', 'KRW')}</span>
+                        <span><b>시총:</b> {format_currency(mkt_cap)}</span>
+                        <span><b>PER:</b> {per if isinstance(per, str) else f"{per:.1f}"}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button(f"{rec['name']} 상세 분석", key=f"btn_{rec['symbol']}_{i}"):
+                    st.session_state.current_page = "analysis"
+                    st.session_state.search_symbol = rec['symbol']
                     st.rerun()
-                except Exception as e:
-                    err_msg = str(e)
-                    if "QUOTA_EXCEEDED" in err_msg:
-                        # 실제로 개인 키를 사용 중인지 체크 (세션 상태와 비교)
-                        is_using_personal = bool(st.session_state.get("user_api_key_input"))
-                        if is_using_personal:
-                            st.error(f"""
-                            ⚠️ **입력하신 개인 API 키도 제한에 걸렸습니다.**
-                            
-                            **원인:** `{err_msg}`
-                            
-                            **조치 제안:**
-                            1. **무료 키 제한**: 무료 API 키는 1분에 약 15번 정도만 호출이 가능합니다. 너무 빨리 클릭하지 마세요.
-                            2. **잠시 대기**: 약 1~2분 정도만 아무 클릭 없이 기다리셨다가 다시 눌러보세요.
-                            3. **키 유효성**: [Google AI Studio](https://aistudio.google.com/app/apikey)에서 방금 만드신 키가 제대로 활성화되었는지 확인해 주세요.
-                            """)
-                        else:
-                            st.warning(f"""
-                            ⚠️ **공용 AI 할당량이 모두 소진되었습니다.**
-                            
-                            **해결 방법:** 왼쪽 사이드바에 본인의 **[개인 Gemini API 키]**를 입력해 주세요. (가장 확실한 방법)
-                            """)
-                    else:
-                        st.error(f"브리핑 생성 실패: {err_msg}")
-        else:
-            st.info("위 버튼을 클릭하면 AI가 현재 지수를 분석하여 브리핑을 생성합니다.")
+
+def render_analysis_screen(symbol):
+    # 실제 티커 검색 로직 (한글 -> 티커)
+    # 여기서는 간단히 맵핑 테이블을 사용하거나, 사용자가 입력한 게 티커라고 가정
+    # 프로젝트를 위해 간단한 매핑 테이블 추가 필요 시 추가
+    
+    st.button("🔙 메인 화면으로 돌아가기", on_click=lambda: st.session_state.update(current_page="main"))
+    
+    ticker = yf.Ticker(symbol)
+    info = get_combined_stock_info(symbol)
+    
+    if not info or ('longName' not in info and 'source' not in info):
+        st.error(f"'{symbol}' 종목 정보를 찾을 수 없습니다. (한국 주식은 종목코드.KS 또는 .KQ 형식을 사용해 주세요)")
+        return
+
+    # 1) 회사 개요
+    st.header(f"📊 {info.get('longName', symbol)} 분석 리포트")
+    
+    curr_price = info.get('currentPrice', info.get('regularMarketPrice', 0))
+    prev_close = info.get('previousClose', 0)
+    change = curr_price - prev_close
+    change_pct = (change / prev_close) * 100 if prev_close != 0 else 0
+
+    # PER 표시 (네이버 데이터는 문자열, yf는 숫자일 수 있음)
+    per_val = info.get('trailingPE')
+    if isinstance(per_val, (int, float)):
+        per_display = f"{per_val:.2f}"
     else:
-        st.info(f"{st.session_state['last_briefing']}")
-        if st.button("🔄 브리핑 새로고침", use_container_width=False):
-            st.session_state['last_briefing'] = None
-            st.rerun()
+        per_display = str(per_val) if per_val else "N/A"
     
-    st.divider()
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("현재 주가", f"{curr_price:,.0f} {info.get('currency', '')}", f"{change:,.0f} ({change_pct:.2f}%)")
+    m2.metric("업종", info.get('sector', 'N/A'))
+    m3.metric("시가총액", format_currency(info.get('marketCap', 0)))
+    m4.metric("PER", per_display)
 
-    @st.cache_data(ttl=3600)
-    def get_recommendation_details_v4(stock_list):
-        updated_list = []
-        for item in stock_list:
-            try:
-                # 국내 주식인 경우 네이버 증권 데이터 우선 시도
-                naver_data = {}
-                is_kr = item['code'].endswith('.KS') or item['code'].endswith('.KQ')
-                if is_kr:
-                    clean_code = item['code'].split('.')[0]
-                    naver_data = get_naver_stock_info(clean_code)
+    # 2) 차트 탭
+    st.subheader("📈 주가 차트")
+    periods = {"20일": "1mo", "1년": "1y", "3년": "3y", "5년": "5y"}
+    chart_tabs = st.tabs(list(periods.keys()))
+    
+    for tab, (p_name, p_val) in zip(chart_tabs, periods.items()):
+        with tab:
+            hist = ticker.history(period=p_val)
+            if not hist.empty:
+                fig = go.Figure(data=[go.Candlestick(
+                    x=hist.index,
+                    open=hist['Open'],
+                    high=hist['High'],
+                    low=hist['Low'],
+                    close=hist['Close'],
+                    increasing_line_color='red', # 한국 스타일
+                    decreasing_line_color='blue',
+                    name='주가'
+                )])
+                # 한글 툴팁 표시는 Plotly의 위 속성으로 기본 제공되나, 명시적으로 hovertemplate 설정 가능
+                fig.update_traces(
+                    hovertemplate="날짜: %{x}<br>시가: %{open:,.0f}<br>고가: %{high:,.0f}<br>저가: %{low:,.0f}<br>종가: %{close:,.0f}"
+                )
+                fig.update_layout(
+                    xaxis_title="날짜",
+                    yaxis_title="가격",
+                    xaxis=dict(
+                        tickformat='%Y-%m-%d',
+                        tickfont=dict(color='#000000', size=12, family="Arial Black"),
+                        title_font=dict(color='#000000', size=14),
+                        tickangle=-45,
+                        showgrid=True,
+                        gridcolor='#eeeeee'
+                    ),
+                    yaxis=dict(
+                        tickfont=dict(color='#000000', size=12),
+                        title_font=dict(color='#000000', size=14),
+                        showgrid=True,
+                        gridcolor='#eeeeee'
+                    ),
+                    xaxis_rangeslider_visible=False,
+                    height=500,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
-                s_obj = yf.Ticker(item['code'])
-                inf = s_obj.info
-                p = inf.get('currentPrice', inf.get('regularMarketPreviousClose', 0))
-                c = inf.get('regularMarketChangePercent', 0)
-                cur = inf.get('currency', 'KRW')
-                
-                # 시총 정보 (네이버 데이터가 있으면 우선 적용)
-                m_cap = naver_data.get('marketCap')
-                if not m_cap:
-                    # 실시간 시총 재계산 (yfinance 필드 지연 보완)
-                    shares = inf.get('sharesOutstanding')
-                    if shares and p:
-                        m_cap = shares * p
-                    else:
-                        m_cap = inf.get('marketCap', 0)
-                
-                # PER 데이터 다각도 취득 및 검증 (네이버 데이터 우선)
-                pe = naver_data.get('trailingPE') or inf.get('trailingPE') or inf.get('forwardPE')
-                if not pe:
-                    eps = inf.get('trailingEps')
-                    if eps and eps > 0 and p > 0:
-                        calc_pe = p / eps
-                        if 0.5 < calc_pe < 500:
-                            pe = calc_pe
-                
-                # 비정상 수치 필터링 (너무 높거나 낮은 경우 N/A 처리)
-                if pe and (pe <= 0 or pe > 1000):
-                    pe = None
-
-                div = inf.get('forwardDividendYield', 0)
-                
-                status = item.get('status', '관망')
-                badge_class = 'badge-buy' if '매수' in status else 'badge-watch' if '주의' in status else 'badge-wait'
-
-                updated_list.append({
-                    **item, 
-                    'price': f"{p:,.2f} {cur}" if cur != "KRW" else f"{p:,.0f}원", 
-                    'change': f"{c:+.2f}%", 'color': '#e03131' if c >= 0 else '#1971c2',
-                    'market_cap': format_market_cap(m_cap, cur), 
-                    'pe': f"{pe:.1f}배" if pe else "N/A", 
-                    'div_yield': f"{div*100:.1f}%" if div else "0.0%",
-                    'badge_class': badge_class
-                })
-            except: updated_list.append({**item, 'change': '-', 'color': 'black', 'market_cap': "정보 없음", 'pe': "N/A", 'div_yield': "0.0%", 'badge_class': 'badge-wait', 'price': '-'})
-        return updated_list
-
-    kr_base = [
-        {"name": "삼성전자", "code": "005930.KS", "reason": "AI 서버용 HBM3E 공급 본격화 및 파운드리 수익성 개선 기대, 업황 바닥 통과에 따른 실적 반등 가속화.", "status": "매수 권장"},
-        {"name": "SK하이닉스", "code": "000660.KS", "reason": "HBM 시장 내 독보적 지위 유지 및 차세대 메모리 주도권 확보, 데이터센터 투자 확대에 따른 고부가 제품 판매 증가.", "status": "매수 권장"},
-        {"name": "LG에너지솔루션", "code": "373220.KS", "reason": "4680 원통형 배터리 양산 및 북미 합작공장 가동을 통한 이익 확대, 글로벌 시장 점유율 1위 수성 전략 강화.", "status": "매수 권장"},
-        {"name": "삼성바이오로직스", "code": "207940.KS", "reason": "4공장 풀가동 및 5공장 조기 증설을 통한 압도적 생산능력 확보, 대형 글로벌 제약사와의 장기 수주 계약 확대.", "status": "매수 권장"},
-        {"name": "현대차", "code": "005380.KS", "reason": "전동화 전환 가속 및 하이브리드 비중 확대로 수익성 개선 성공, 주주환원 정책 강화(자사주 소각 등)로 기업 가치 제고.", "status": "매수 권장"},
-        {"name": "NAVER", "code": "035420.KS", "reason": "생성형 AI '하이퍼클로바X' 기반 B2B 솔루션 매출 본격화, 치지직 등 커뮤니티 서비스 강화로 광고 수익 확대.", "status": "매수 권장"},
-        {"name": "셀트리온", "code": "068270.KS", "reason": "짐펜트라 미국 직접 판매 채널 구축 및 신규 바이오시밀러 승인 기대, 합병 후 효율화된 비용 구조로 이익률 상승.", "status": "매수 권장"},
-        {"name": "기아", "code": "000270.KS", "reason": "역대 최고 영업이익률 달성과 함께 공격적인 배당 정책 유지, 북미 및 유럽 내 고마진 모델 판매 비중 지속 확대.", "status": "매수 권장"},
-        {"name": "삼성SDI", "code": "006400.KS", "reason": "전고체 배터리 시제품 공급 및 모빌리티용 원형 배터리 시장 점유율 확대, 기술 중심의 차별화된 고수익 성장 전략.", "status": "매수 권장"},
-        {"name": "KB금융", "code": "105560.KS", "reason": "주주가치 제고를 위한 밸류업 프로그램 선도적 이행 및 자본 효율성 개선, 견고한 이익 체력을 바탕으로 배당 성향 확대.", "status": "매수 권장"},
-        {"name": "신한지주", "code": "055550.KS", "reason": "속도감 있는 자사주 매입 및 소각 정책으로 주당 순이익 증가 유도, 금리 변동성에도 철저한 리스크 관리 탁월.", "status": "매수 권장"},
-        {"name": "삼성물산", "code": "028260.KS", "reason": "바이오 부문 실적 호조 및 건설 부문 역대 최고 수주 잔고 유지, 자사주 순차적 소각 등 전향적 주주 환원 가시화.", "status": "매수 권장"},
-        {"name": "현대모비스", "code": "012330.KS", "reason": "전동화 핵심 부품 공급 확대 및 AS 부문 고수익 구조 유지, 완성차 글로벌 가동률 상승에 따른 실적 개선 수혜.", "status": "매수 권장"},
-        {"name": "LG화학", "code": "051910.KS", "reason": "배터리 양극재 캐파 증설 및 소재 수직 계열화 성공, 신성장 동력(신약, 필터 등) 비중 증대에 따른 재평가 기대.", "status": "매수 권장"},
-        {"name": "카카오", "code": "035720.KS", "reason": "카카오톡 기반 광고 매출 안정화 및 AI 서비스 일상화 전략, 계열사 리스크 해소와 수익성 중심의 체질 개선 성공.", "status": "매수 권장"}
-    ]
-    us_base = [
-        {"name": "NVIDIA", "code": "NVDA", "reason": "블랙웰 아키텍처 도입을 통한 압도적 기술 격차 유지, 데이터센터 매출의 지속적인 서프라이즈와 AI 가속기 시장 독점.", "status": "매수 권장"},
-        {"name": "Microsoft", "code": "MSFT", "reason": "Azure 클라우드에 코파일럿 통합을 통한 AI 수익 모델 선점, 독보적인 현금 흐름과 장기 성장 가시성 확보.", "status": "매수 권장"},
-        {"name": "Apple", "code": "AAPL", "reason": "자체 설계 AI '애플 인텔리전스' 기반의 아이폰 교체 주기 도래, 서비스 부문 비중 확대로 이익 고도화 지속.", "status": "매수 권장"},
-        {"name": "Alphabet", "code": "GOOGL", "reason": "구글 클라우드의 AI 인프라 매출 급증 및 검색 광고 성공적 방어, 유튜브 쇼츠 수익화 가속 및 웨이모 성장 기대.", "status": "매수 권장"},
-        {"name": "Amazon", "code": "AMZN", "reason": "AWS 인프라 효율화 및 AI 연계 서비스 성장 가시화, 물류 혁신을 통한 마진율 개선 및 광고 지배력 강화.", "status": "매수 권장"}
-    ]
-
-    with st.spinner("최신 추천주 데이터를 불러오는 중입니다..."):
-        kr_recommends = get_recommendation_details_v4(kr_base)
-        us_recommends = get_recommendation_details_v4(us_base)
-
-    # 국내 주식을 우선 배치 (수직으로 나누어 국내 주식을 상단에 강조)
-    st.write("#### 🇰🇷 국내 유망 종목 TOP 15")
-    kr_cols = st.columns(3) # 3열로 나누어 15개를 효율적으로 배치
-    for i, s_item in enumerate(kr_recommends):
-        with kr_cols[i % 3]:
-            with st.container():
-                st.markdown(f"""
-                <div class="recommend-box">
-                    <div>
-                        <div class="recommend-header">
-                            <div class="recommend-name">
-                                {s_item["name"]} <br><small style="color:#888; font-weight:normal;">{s_item["code"]}</small>
-                                <span class="status-badge {s_item['badge_class']}">{s_item['status']}</span>
-                            </div>
-                        </div>
-                        <div class="recommend-price" style="color:{s_item['color']}; font-size: 1.1em; margin: 5px 0;">
-                            {s_item["price"]} <small>{s_item["change"]}</small>
-                        </div>
-                        <div style="font-size: 0.82em; color: #666;">
-                            시총: {s_item["market_cap"]} | PER: {s_item["pe"]}
-                        </div>
-                        <div style="margin-top: 8px; font-size: 0.83em; color: #555; background-color: #f1f3f5; padding: 6px; border-radius: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
-                            <b>💡 이유:</b> {s_item["reason"]}
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                if st.button(f"{s_item['name']} 분석", key=f"dtl_btn_{s_item['code']}", use_container_width=True):
-                    st.session_state['current_ticker'] = s_item['code']
-                    st.session_state['show_analysis'] = True
-                    st.rerun()
-
-    st.divider()
-    st.write("#### 🇺🇸 미국 유망 종목 TOP 5")
-    us_cols = st.columns(5) # 5개를 한 줄에 배치
-    for i, s_item in enumerate(us_recommends):
-        with us_cols[i]:
-            with st.container():
-                st.markdown(f"""
-                <div class="recommend-box" style="padding: 10px; height: 160px; justify-content: flex-start;">
-                    <div class="recommend-name" style="font-size: 1em;">{s_item["name"]}</div>
-                    <div style="font-size: 0.8em; color: #888;">{s_item["code"]}</div>
-                    <div class="recommend-price" style="color:{s_item['color']}; margin: 5px 0; font-size: 1em;">
-                        {s_item["price"]} <br><small>{s_item["change"]}</small>
-                    </div>
-                    <div class="status-badge {s_item['badge_class']}" style="font-size: 0.75em; margin-left: 0; display: inline-block;">{s_item['status']}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                if st.button("분석", key=f"us_dtl_{s_item['code']}", use_container_width=True):
-                    st.session_state['current_ticker'] = s_item['code']
-                    st.session_state['show_analysis'] = True
-                    st.rerun()
-
-else:
-    # --- Analysis Screen ---
-    ticker = format_ticker(st.session_state['current_ticker'])
-    with st.spinner(f"'{st.session_state['current_ticker']}' 분석 중..."):
-        stock_obj, info = get_stock_data(ticker)
-
-    if info and 'symbol' in info:
-        st.subheader(f"🏢 {info.get('longName', info.get('shortName', ticker))}")
-        with st.expander("데이터 진단 정보"): st.json(info)
-        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        with m_col1:
-            prc = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('regularMarketPreviousClose', 0)
-            curr = info.get('currency', 'KRW')
-            st.metric("현재가", f"{prc:,.0f} {curr}" if curr == "KRW" else f"{prc:,.2f} {curr}")
-        with m_col2: st.metric("산업 분야", info.get('sector', info.get('industry', '정보 없음')))
-        with m_col3: st.metric("시가총액(규모)", format_market_cap(info.get('marketCap'), info.get('currency', 'KRW')))
-        with m_col4:
-            chg = info.get('regularMarketChangePercent', 0)
-            st.metric("전일대비", f"{chg:+.2f}%", delta=f"{chg:+.2f}%" if chg else None)
-
-        st.subheader("📊 주가 분석 차트")
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["20일", "1년", "3년", "5년", "인터랙티브"])
-        for tab, (p_name, p_val) in zip([tab1, tab2, tab3, tab4, tab5], {"20일": "1mo", "1년": "1y", "3년": "3y", "5년": "5y", "인터랙티브": "max"}.items()):
-            with tab:
-                hist = stock_obj.history(period=p_val)
-                if not hist.empty:
-                    fig = go.Figure(data=[go.Candlestick(
-                        x=hist.index,
-                        open=hist['Open'], high=hist['High'],
-                        low=hist['Low'], close=hist['Close'],
-                        name="주가 정보",
-                        increasing_line_color='#e03131', # 상승: 빨간색
-                        decreasing_line_color='#1971c2', # 하락: 파란색
-                        hovertemplate="<b>%{x|%Y-%m-%d}</b><br>시가: %{open:,.0f}원<br>고가: %{high:,.0f}원<br>저가: %{low:,.0f}원<br>종가: %{close:,.0f}원<br><extra></extra>" if curr == "KRW" else "<b>%{x|%Y-%m-%d}</b><br>시가: %{open:,.2f}<br>고가: %{high:,.2f}<br>저가: %{low:,.2f}<br>종가: %{close:,.2f}<br><extra></extra>"
-                    )])
-                    fig.update_layout(xaxis_rangeslider_visible=False, height=500, yaxis=dict(tickformat=",.0f" if curr == "KRW" else ",.2f", ticksuffix="원" if curr == "KRW" else ""))
-                    st.plotly_chart(fig, use_container_width=True)
-                else: st.write("데이터가 없습니다.")
-
-        # Financials
-        st.subheader("🧾 재무제표 (단위: 한글)")
-        FIN_MAP = {
-            # 손익계산서 (Income Statement)
-            "Total Revenue": "매출액",
-            "Cost Of Revenue": "매출원가",
-            "Gross Profit": "매출총이익",
-            "Operating Expense": "영업비용",
-            "Operating Income": "영업이익",
-            "Net Non Operating Interest Income Expense": "영업외손익(이자)",
-            "Other Income Expense": "기타영업외손익",
-            "Pretax Income": "법인세차감전순이익",
-            "Tax Provision": "법인세비용",
-            "Net Income Common Stockholders": "당기순이익(보통주)",
-            "Net Income": "당기순이익",
-            "Basic EPS": "기본주당순이익(EPS)",
-            "Diluted EPS": "희석주당순이익(EPS)",
+    # 3) 재무제표 탭
+    st.subheader("📑 재무제표")
+    stmt_tabs = st.tabs(["손익계산서", "대차대조표"])
+    
+    def process_df(df):
+        # 최신 연월일이 우측으로 오도록 컬럼 순서 반전
+        df = df[df.columns[::-1]]
+        
+        # 한글 매핑 (항목 확장)
+        kor_map = {
+            "Total Revenue": "총 매출",
+            "Operating Revenue": "영업 수익",
+            "Cost Of Revenue": "매출 원가",
+            "Gross Profit": "매출 총이익",
+            "Operating Expense": "영업 비용",
+            "Operating Income": "영업 이익",
+            "Net Income": "당기 순이익",
+            "Net Income Common Stockholders": "당기 순이익(보통주)",
             "EBITDA": "EBITDA",
             "EBIT": "EBIT",
-            
-            # 대차대조표 (Balance Sheet)
-            "Total Assets": "자산총계",
-            "Current Assets": "유동자산",
-            "Cash And Cash Equivalents": "현금및현금성자산",
-            "Receivables": "매출채권",
-            "Inventory": "재고자산",
-            "Prepaid Assets": "선급비용",
-            "Other Current Assets": "기타유동자산",
-            "Total Non Current Assets": "비유동자산총계",
-            "Net PPE": "유형자산",
-            "Goodwill And Other Intangible Assets": "무형자산및영업권",
-            "Total Liabilities Net Minority Interest": "부채총계",
-            "Current Liabilities": "유동부채",
-            "Payables": "매입채무",
-            "Current Debt": "단기차입금",
-            "Total Non Current Liabilities Net Minority Interest": "비유동부채총계",
-            "Long Term Debt": "장기차입금",
-            "Total Equity Gross Minority Interest": "자본총계",
-            "Stockholders Equity": "자본총계(지배)",
-            "Common Stock": "자본금",
-            "Retained Earnings": "이익잉여금",
-            "Working Capital": "운전자본"
+            "Total Assets": "총 자산",
+            "Total Liabilities Net Minority Interest": "총 부채",
+            "Total Equity Gross Minority Interest": "총 자본",
+            "Total Stockholders Equity": "주주 지분",
+            "Retained Earnings": "이익 잉여금",
+            "Common Stock": "보통주",
+            "Cash And Cash Equivalents": "현금 및 현금성 자산",
+            "Inventory": "재고 자산",
+            "Total Current Assets": "유동 자산",
+            "Total Non Current Assets": "비유동 자산",
+            "Total Current Liabilities": "유동 부채",
+            "Total Non Current Liabilities": "비유동 부채",
+            "Long Term Debt": "장기 부채",
+            "Short Term Debt": "단기 부채",
+            "Research And Development": "연구 개발비",
+            "Selling General And Administrative": "판매비 및 관리비"
         }
+        df.index = [kor_map.get(idx, idx) for idx in df.index]
+        # 단위 변환 및 포맷
+        return df.applymap(lambda x: format_currency(x) if isinstance(x, (int, float)) else x)
+
+    with stmt_tabs[0]:
+        st.write("연간 손익계산서")
+        st.dataframe(process_df(ticker.financials), use_container_width=True)
+        st.write("분기별 손익계산서")
+        st.dataframe(process_df(ticker.quarterly_financials), use_container_width=True)
+
+    with stmt_tabs[1]:
+        st.write("연간 대차대조표")
+        st.dataframe(process_df(ticker.balance_sheet), use_container_width=True)
+        st.write("분기별 대차대조표")
+        st.dataframe(process_df(ticker.quarterly_balance_sheet), use_container_width=True)
+
+    # 4) Gemini AI 분석 & 5) 투자 판단 가이드
+    st.markdown("---")
+    st.subheader("🤖 Gemini AI 심층 분석")
+    
+    if GEMINI_API_KEY:
+        with st.spinner("AI 분석 리포트 생성 중..."):
+            try:
+                res_text = get_ai_analysis(info.get('longName'), symbol)
+                
+                # 투자 판단 가이드 시각화
+                status = "관망"
+                if "매수 권장" in res_text: status = "매수 권장"
+                elif "주의" in res_text: status = "주의"
+                
+                status_color = "#28a745" if status == "매수 권장" else ("#ffc107" if status == "관망" else "#dc3545")
+                
+                st.markdown(f"""
+                <div style="padding: 20px; border-radius: 10px; background-color: {status_color}; color: white; text-align: center; margin-bottom: 20px;">
+                    <h2 style="margin:0; color: white !important;">투자 판단 가이드: {status}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.info("💡 AI 정밀 분석 결과")
+                st.markdown(f'<div class="ai-report-area">', unsafe_allow_html=True)
+                st.markdown(res_text)
+                st.markdown('</div>', unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"AI 분석 중 오류가 발생했습니다: {str(e)}")
+
+# --- 메인 실행 로직 ---
+
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "main"
+
+if st.session_state.current_page == "main":
+    render_main_screen()
+elif st.session_state.current_page == "analysis":
+    input_sym = st.session_state.search_symbol.strip()
+    
+    # 1. KRX 매핑 시도
+    krx_mapping = load_krx_symbols()
+    target_sym = krx_mapping.get(input_sym, krx_mapping.get(input_sym.lower(), input_sym))
+    
+    # 2. 숫자로만 된 티커 처리 (예: 005930)
+    if target_sym.isdigit() and len(target_sym) == 6:
+        # 국내 주식 코드로 판단하여 .KS 추가 (KRX 매핑에 없을 경우 대비)
+        target_sym += ".KS"
         
-        def format_won_korean(val):
-            """숫자를 조, 억 단위 한글로 변환"""
-            if pd.isna(val) or val == 0: return "-"
-            abs_val = abs(val)
-            res = ""
-            if abs_val >= 1e12:
-                res += f"{int(abs_val // 1e12)}조 "
-                abs_val %= 1e12
-            if abs_val >= 1e8:
-                res += f"{int(abs_val // 1e8)}억"
-            
-            if not res: return f"{val:,.0f}"
-            return ("-" if val < 0 else "") + res.strip()
+    # 3. 데이터가 있는지 확인하고, .KS로 안 나올 경우 .KQ 시도 (보정 로직)
+    def validate_ticker(symbol):
+        ticker = yf.Ticker(symbol)
+        try:
+            # 실시간 가격이 있으면 유효한 티커로 간주
+            if ticker.info.get('currentPrice') or ticker.info.get('regularMarketPrice'):
+                return symbol
+        except:
+            pass
+        return None
 
-        def proc_fin(df):
-            if df is None or df.empty: return df
-            # 인덱스 한글화
-            df.index = [FIN_MAP.get(i, i) for i in df.index]
-            # 컬럼 순서 반전 (최신 데이터를 우측으로 배치)
-            df = df.iloc[:, ::-1]
-            # 모든 셀에 한글 단위 적용
-            return df.applymap(format_won_korean)
+    # 국내 주식인데 정보가 안 나오면 마켓 접미사 교체 시도 (.KS <-> .KQ)
+    fixed_sym = target_sym
+    if target_sym.endswith(".KS") or target_sym.endswith(".KQ"):
+        if not validate_ticker(target_sym):
+            alt_sym = target_sym.replace(".KS", ".KQ") if ".KS" in target_sym else target_sym.replace(".KQ", ".KS")
+            if validate_ticker(alt_sym):
+                fixed_sym = alt_sym
 
-        fin_period = st.radio("보고서 주기 선택", ["연간 (Annual)", "분기별 (Quarterly)"], horizontal=True)
-        f_t1, f_t2 = st.tabs(["손익계산서", "대차대조표"])
-        if "연간" in fin_period:
-            with f_t1: st.table(proc_fin(stock_obj.income_stmt))
-            with f_t2: st.table(proc_fin(stock_obj.balance_sheet))
-        else:
-            with f_t1: st.table(proc_fin(stock_obj.quarterly_income_stmt))
-            with f_t2: st.table(proc_fin(stock_obj.quarterly_balance_sheet))
-
-        st.subheader("🤖 AI 투자 분석 리포트")
-        a_col1, a_col2 = st.columns([2, 1])
-        with st.spinner("AI 분석 중..."): 
-            # 최신 api_key를 인자로 전달
-            ai_text = get_ai_analysis(ticker, info, api_key)
-        with a_col1: st.markdown(ai_text, unsafe_allow_html=True)
-        with a_col2:
-            st.write("### 🎯 투자 판단")
-            if "매수 권장" in ai_text: st.markdown('<div class="status-card" style="background-color:#28a745;">매수 권장</div>', unsafe_allow_html=True)
-            elif "주의" in ai_text: st.markdown('<div class="status-card" style="background-color:#dc3545;">주의</div>', unsafe_allow_html=True)
-            else: st.markdown('<div class="status-card" style="background-color:#ffc107; color:black;">관망</div>', unsafe_allow_html=True)
-            st.info("본 분석은 참고용이며 최종 투자는 본인의 판단하에 신중히 진행하시기 바랍니다.")
-    else:
-        st.error("종목 정보를 불러올 수 없습니다.")
+    render_analysis_screen(fixed_sym)
