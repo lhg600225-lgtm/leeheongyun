@@ -223,7 +223,7 @@ def load_krx_symbols():
         print(f"Error loading KRX symbols: {e}")
         return {}
 
-@st.cache_data(ttl=86400) # 하루 한 번만 갱신 (할당량 절약)
+@st.cache_data(ttl=3600) # 오류 시 빠른 회복을 위해 1시간으로 단축
 def get_dynamic_recommendations():
     if not GEMINI_API_KEY: return []
     current_date = datetime.now().strftime("%Y-%m-%d")
@@ -245,7 +245,10 @@ def get_dynamic_recommendations():
         # JSON 부분만 추출 (가끔 AI가 백틱을 포함함)
         match = re.search(r'\[.*\]', response.text, re.DOTALL)
         if match:
-            return json.loads(match.group())
+            json_str = match.group()
+            # 종종 따옴표 문제 해결
+            json_str = json_str.replace("'", '"')
+            return json.loads(json_str)
         return []
     except Exception as e:
         print(f"Error in dynamic recommendations: {e}")
@@ -434,13 +437,29 @@ def render_main_screen():
     with st.spinner("오늘의 유망 종목을 선정 중..."):
         recommendations = get_dynamic_recommendations()
     
-    if not recommendations:
-        st.warning("추천 종목을 불러오는 중 오류가 발생했습니다. 기본 데이터를 표시합니다.")
-        # 폴백 데이터 (기존 데이터 유지)
+    if not recommendations or len(recommendations) < 3:
+        st.warning("AI 추천 기능을 일시적으로 사용할 수 없어 주요 종목 리스트를 표시합니다.")
         recommendations = [
-            {"name": "삼성전자", "symbol": "005930.KS", "reason": "반도체 업황 회복 및 AI 수요"},
-            {"name": "SK하이닉스", "symbol": "000660.KS", "reason": "HBM 시장 주도권"},
-            {"name": "NVIDIA", "symbol": "NVDA", "reason": "AI 칩 시장 압도적 점유율"}
+            {"name": "삼성전자", "symbol": "005930.KS", "reason": "글로벌 반도체 리더 및 AI 수요 수혜"},
+            {"name": "SK하이닉스", "symbol": "000660.KS", "reason": "HBM 메모리 시장에서의 강력한 독점력"},
+            {"name": "현대차", "symbol": "005380.KS", "reason": "전기차 및 하이브리드 시장 수익성 확대"},
+            {"name": "NAVER", "symbol": "035420.KS", "reason": "AI 검색 기술 고도화 및 광고 실적 개선"},
+            {"name": "LG에너지솔루션", "symbol": "373220.KS", "reason": "글로벌 배터리 시장 점유율 및 공급망 확보"},
+            {"name": "삼성바이오로직스", "symbol": "207940.KS", "reason": "위탁생산(CMO) 수요 지속 및 공장 증설"},
+            {"name": "셀트리온", "symbol": "068270.KS", "reason": "바이오시밀러 신제품 승인 및 합병 시너지"},
+            {"name": "기아", "symbol": "000270.KS", "reason": "전기차 라인업 강화 및 글로벌 호실적"},
+            {"name": "KB금융", "symbol": "105560.KS", "reason": "금리 환경 수혜 및 주주 환원 정책 강화"},
+            {"name": "신한지주", "symbol": "055550.KS", "reason": "금융 그룹 포트폴리오 다각화 및 배당 수익"},
+            {"name": "NVIDIA", "symbol": "NVDA", "reason": "AI 인프라의 필수 하드웨어 공급자"},
+            {"name": "Microsoft", "symbol": "MSFT", "reason": "클라우드 서비스 및 AI 소프트웨어 통합"},
+            {"name": "Apple", "symbol": "AAPL", "reason": "생태계 기반 AI 기기 교체 수요 발생"},
+            {"name": "Alphabet", "symbol": "GOOGL", "reason": "Gemini AI를 통한 검색 광고 기술 고도화"},
+            {"name": "Amazon", "symbol": "AMZN", "reason": "AWS 클라우드 성장 및 물류망 효율화"},
+            {"name": "Tesla", "symbol": "TSLA", "reason": "자율주행 FSD 고도화 및 에너지 사업 확대"},
+            {"name": "Meta", "symbol": "META", "reason": "AI 기반 광고 시스템 효율화 및 메타버스 시너지"},
+            {"name": "TSMC", "symbol": "TSM", "reason": "선단 공정 경쟁력 우위 및 파운드리 점유율"},
+            {"name": "Broadcom", "symbol": "AVGO", "reason": "AI 네트워크 장비 및 반도체 포트폴리오 강화"},
+            {"name": "Netflix", "symbol": "NFLX", "reason": "콘텐츠 경쟁력 기반 가입자 및 수익성 개선"}
         ]
 
     cols = st.columns(2)
