@@ -129,6 +129,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 try:
     if "GEMINI_API_KEY" in st.secrets:
         GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    elif "GOOGLE_API_KEY" in st.secrets:
+        GEMINI_API_KEY = st.secrets["GOOGLE_API_KEY"]
 except:
     pass
 
