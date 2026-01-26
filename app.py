@@ -124,6 +124,11 @@ st.markdown("""
 
 # Gemini 설정
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Streamlit Cloud Secrets 대응 (Secrets에 설정된 경우 우선 사용)
+if "GEMINI_API_KEY" in st.secrets:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-flash-latest')
